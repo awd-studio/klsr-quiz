@@ -1,0 +1,27 @@
+{
+  "name": "klsr-quiz",
+  "version": "2.2.0",
+  "private": true,
+  "description": "Тренажер залікових питань КЛСР: картки, вибір варіанту, Так/Ні, послідовності. Офлайн, один HTML-файл.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "dev": "node scripts/build.mjs --watch --serve",
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "node --test --test-reporter=spec \"tests/unit/**/*.test.ts\" \"tests/data/**/*.test.ts\"",
+    "test:e2e": "playwright test",
+    "check": "npm run typecheck && npm run format:check && npm test && npm run build && npm run test:e2e"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^22.18.0",
+    "esbuild": "^0.28.2",
+    "prettier": "^3.8.1",
+    "typescript": "^6.0.2"
+  }
+}
