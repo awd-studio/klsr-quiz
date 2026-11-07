@@ -136,7 +136,11 @@ describe('isCorrect', () => {
   });
 
   it('tf', () => {
-    const t = taskFor(q('m3-57'), q('m3-57').variants.find((v) => v.kind === 'tf' && !v.correct)!, seeded(1));
+    const t = taskFor(
+      q('m3-57'),
+      q('m3-57').variants.find((v) => v.kind === 'tf' && !v.correct)!,
+      seeded(1),
+    );
     assert.ok(isCorrect(t, { kind: 'tf', value: false }));
     assert.ok(!isCorrect(t, { kind: 'tf', value: true }));
   });

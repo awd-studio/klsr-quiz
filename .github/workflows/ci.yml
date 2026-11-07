@@ -20,9 +20,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
+          cache: npm
 
-      # Після першого `npm install` закомітьте package-lock.json і замініть на `npm ci`.
-      - run: npm install --no-audit --no-fund
+      - run: npm ci --no-audit --no-fund
 
       - run: npm run typecheck
       - run: npm run format:check
@@ -63,7 +63,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
-      - run: npm install --no-audit --no-fund
+          cache: npm
+      - run: npm ci --no-audit --no-fund
       - run: npm run build
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
