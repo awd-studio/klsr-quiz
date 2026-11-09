@@ -1,6 +1,6 @@
 import { SETS, getQuestion } from '../../data/index.ts';
 import { gradeFor, gradeThresholds } from '../../core/grading.ts';
-import { TF_PREFIX, type Task } from '../../core/round.ts';
+import { DIFFICULTY_LABEL, TF_PREFIX, type Task } from '../../core/round.ts';
 import { stats, wrongTaskIndices, type TaskResult } from '../../core/session.ts';
 import { questionRef, renderAnswer, starButton } from '../components.ts';
 import { cx, h, type Child } from '../dom.ts';
@@ -37,7 +37,7 @@ export function resultView({ state, actions }: Ctx): HTMLElement {
       h(
         'div',
         { class: 'muted' },
-        `${SETS[s.config.setId].title} · ${s.config.mode === 'cards' ? 'Картки' : 'Вибір варіанту'}${SOURCE_LABEL[s.config.source]}`,
+        `${SETS[s.config.setId].title} · ${s.config.mode === 'cards' ? 'Картки' : `Вибір варіанту (${DIFFICULTY_LABEL[s.config.difficulty]})`}${SOURCE_LABEL[s.config.source]}`,
       ),
       h('div', { class: 'big', 'data-testid': 'result-pct' }, `${pct}%`),
       h(

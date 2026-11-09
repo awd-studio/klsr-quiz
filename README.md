@@ -12,7 +12,8 @@ The UI is in Ukrainian; this document describes the project for developers.
 - **Question sets:** “Module 1” (100) or “General” (modules 1–3, 209).
 - **Modes:**
   - **Flashcards** — question → reveal answer → “I knew it” / “I didn’t” (both advance; “didn’t” counts as a mistake).
-  - **Multiple choice** — 4 options: the verbatim answer from the source plus 3 plausible distractors.
+  - **Multiple choice** — 4 options: the verbatim answer from the source plus 3 distractors, in a random order every time (re-shuffled when a skipped question comes back or a test is resumed).
+- **Option difficulty** (multiple choice): **hard** (default) — the source distractors that differ from the answer by a few words or items, like the real exam; **easy** — distractors are the answers to adjacent questions of the same module (same shape, clearly different content). Select-all extras come from adjacent questions too.
 - **Other formats:** in multiple-choice mode about **10%** of a round (rounded, at least one from 10 questions: 20 → 2, 30 → 3, 100 → 10) is automatically shown as a true/false statement, term-from-definition, select-all-that-apply, ordering (TLP, SMESC, METT-TC, EDIP, …) or an exam-sheet phrasing. A question appears **once per round** — either in the standard form or in another format, never both. In the General set, questions with identical text in different modules (M1 #32 / M2 #4, M1 #73 / M3 #20) never share a round. After answering, the original question and verbatim answer are shown.
 - **Settings:** number of questions, kept per set (defaults: Module 1 — 20, General — 30), mistake limit (default 5), “exam preset” (30 questions, fail from 10 mistakes).
 - **Skip** a question — skipped questions return at the end, tagged.
@@ -20,6 +21,8 @@ The UI is in Ukrainian; this document describes the project for developers.
 - **Result:** percentage, status, grade on the exam scale (30–28 excellent, 27–24 good, 23–21 satisfactory, ≤ 20 fail; scaled for other round sizes), mistakes with your and the correct answer, “retry mistakes”.
 - **Hard questions** (answered wrong) are remembered and can be practised from the home screen.
 - **Saved questions:** star ☆ any question; a dedicated screen to review, remove, or practise them.
+- **Excluded questions:** the ⊘ icon next to the star removes a question from all future tests. Another question takes its place, so the round size stays the same; when there is nothing left to substitute, the round shrinks. “Undo” is offered right away; a dedicated screen lists exclusions and restores any or all of them.
+- **Version and “What’s new”** in the home-screen footer; the page is built from [`CHANGELOG.md`](CHANGELOG.md).
 - **Unfinished test** is persisted and can be resumed after closing the tab.
 - **Theme switch** on the home screen — system / light / dark; remembered and applied before first paint (no flash).
 - **After answering**, the correct option pulses and a wrong pick shakes; the page scrolls so the correct and chosen options are visible (the correct one always fully) and focus moves to the correct option (`Enter` → next). Answers can’t be changed afterwards.
@@ -68,7 +71,7 @@ Before the first e2e run: `npx playwright install chromium`.
 ```
 src/
   data/     questions (module1–3.ts), alternative formats (variants.ts), sets (index.ts)
-  core/     pure, DOM-free logic: rng, round building, session state machine, grading, storage
+  core/     pure, DOM-free logic: rng, round building, easy distractors, session state machine, grading, storage, changelog
   ui/       controller (app.ts), components, screens (views/)
   main.ts   entry point
 scripts/build.mjs   esbuild → one HTML file (CSS and JS inlined)

@@ -1,17 +1,23 @@
 import { SETS, isInSet, questionsOfSet } from '../../data/index.ts';
+import type { QuestionId } from '../../data/types.ts';
 import { ALT_SHARE } from '../../core/round.ts';
 import { stats } from '../../core/session.ts';
-import { segmented, stepper, themeSwitch } from '../components.ts';
+import { footer, segmented, stepper, themeSwitch } from '../components.ts';
 import { h } from '../dom.ts';
 import type { Ctx } from '../state.ts';
+import { VERSION } from '../version.ts';
 
 export function homeView({ state, actions, canDownload }: Ctx): HTMLElement {
-  const { prefs, hard, saved, session } = state.data;
+  const { prefs, hard, saved, excluded, session } = state.data;
   const set = SETS[prefs.setId];
   const total = questionsOfSet(prefs.setId).length;
-  const hardCount = hard.filter((id) => isInSet(prefs.setId, id)).length;
-  const savedCount = saved.filter((id) => isInSet(prefs.setId, id)).length;
-  const count = Math.min(prefs.counts[prefs.setId], total);
+  const active = (id: QuestionId) => isInSet(prefs.setId, id) && !excluded.includes(id);
+  const excludedInSet = excluded.filter((id) => isInSet(prefs.setId, id)).length;
+  /** Скільки питань можна поставити в тест (без виключених). */
+  const available = total - excludedInSet;
+  const hardCount = hard.filter(active).length;
+  const savedCount = saved.filter(active).length;
+  const count = Math.max(Math.min(prefs.counts[prefs.setId], available), Math.min(1, available));
 
   const resume = session
     ? (() => {
@@ -33,7 +39,12 @@ export function homeView({ state, actions, canDownload }: Ctx): HTMLElement {
       h('h1', { tabindex: '-1', 'data-autofocus': true }, 'КЛСР — тренажер'),
       themeSwitch(prefs.theme, actions.setTheme),
     ),
-    h('p', { class: 'sub' }, `Залікові питання · ${set.title} · ${total} питань`),
+    h(
+      'p',
+      { class: 'sub' },
+      `Залікові питання · ${set.title} · ${total} питань`,
+      excludedInSet ? h('span', { 'data-testid': 'excluded-note' }, ` · виключено ${excludedInSet}`) : null,
+    ),
 
     h(
       'section',
@@ -64,11 +75,30 @@ export function homeView({ state, actions, canDownload }: Ctx): HTMLElement {
         actions.setMode,
       ),
       prefs.mode === 'choice'
-        ? h(
-            'p',
-            { class: 'hint', 'data-testid': 'alt-hint' },
-            `Близько ${Math.round(ALT_SHARE * 100)}% питань подаються в іншому форматі: Так / Ні, термін за визначенням, кілька відповідей або послідовність.`,
-          )
+        ? [
+            h('h3', { class: 'panel__sub', id: 'difficulty-label' }, 'Складність варіантів'),
+            segmented(
+              'Складність варіантів',
+              prefs.difficulty,
+              [
+                { value: 'hard', title: 'Складні', hint: 'Схожі на правильний, як на заліку' },
+                { value: 'easy', title: 'Легкі', hint: 'Відповіді на суміжні питання' },
+              ],
+              actions.setDifficulty,
+            ),
+            h(
+              'p',
+              { class: 'hint', 'data-testid': 'difficulty-hint' },
+              prefs.difficulty === 'easy'
+                ? 'Неправильні варіанти — відповіді на суміжні питання того ж модуля: схожі за формою, але помітно інші за змістом. Правильна відповідь — дослівно з файлу.'
+                : 'Неправильні варіанти відрізняються від правильного лише кількома словами чи пунктами — як на заліку.',
+            ),
+            h(
+              'p',
+              { class: 'hint', 'data-testid': 'alt-hint' },
+              `Близько ${Math.round(ALT_SHARE * 100)}% питань подаються в іншому форматі: Так / Ні, термін за визначенням, кілька відповідей або послідовність. Порядок варіантів щоразу випадковий.`,
+            ),
+          ]
         : null,
     ),
 
@@ -76,7 +106,15 @@ export function homeView({ state, actions, canDownload }: Ctx): HTMLElement {
       'section',
       { class: 'panel' },
       h('h2', null, 'Налаштування'),
-      stepper('count', 'Кількість питань', `від 1 до ${total}`, count, 1, total, actions.setCount),
+      stepper(
+        'count',
+        'Кількість питань',
+        excludedInSet ? `від 1 до ${available} (без виключених)` : `від 1 до ${total}`,
+        count,
+        Math.min(1, available),
+        available,
+        actions.setCount,
+      ),
       stepper(
         'limit',
         'Допустимо помилок',
@@ -97,7 +135,11 @@ export function homeView({ state, actions, canDownload }: Ctx): HTMLElement {
       'div',
       { class: 'btns' },
       resume,
-      h('button', { type: 'button', class: 'btn', 'data-testid': 'start', onclick: actions.start }, 'Почати'),
+      h(
+        'button',
+        { type: 'button', class: 'btn', 'data-testid': 'start', disabled: available === 0, onclick: actions.start },
+        'Почати',
+      ),
       h(
         'div',
         { class: 'btns__row' },
@@ -129,11 +171,16 @@ export function homeView({ state, actions, canDownload }: Ctx): HTMLElement {
         { type: 'button', class: 'btn btn--secondary', 'data-testid': 'saved', onclick: actions.openSaved },
         `☆ Збережені питання (${savedCount})`,
       ),
+      h(
+        'button',
+        { type: 'button', class: 'btn btn--secondary', 'data-testid': 'excluded', onclick: actions.openExcluded },
+        `⊘ Виключені питання (${excluded.length})`,
+      ),
     ),
 
-    h(
-      'footer',
-      { class: 'footer' },
+    footer(
+      VERSION,
+      actions.openChangelog,
       canDownload
         ? h(
             'a',
@@ -141,7 +188,6 @@ export function homeView({ state, actions, canDownload }: Ctx): HTMLElement {
             'Завантажити офлайн-версію (один HTML-файл)',
           )
         : null,
-      h('span', null, 'Питання та відповіді — дослівно з файлу «Залікові питання КЛСР».'),
     ),
   );
 }

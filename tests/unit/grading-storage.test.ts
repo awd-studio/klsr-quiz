@@ -57,23 +57,35 @@ describe('storage', () => {
     const s = new MemoryStorage();
     saveState(s, {
       ...emptyState(),
-      prefs: { ...DEFAULT_PREFS, setId: 'all', mode: 'choice', counts: { m1: 15, all: 40 }, limit: 10, theme: 'dark' },
+      prefs: {
+        ...DEFAULT_PREFS,
+        setId: 'all',
+        mode: 'choice',
+        difficulty: 'easy',
+        counts: { m1: 15, all: 40 },
+        limit: 10,
+        theme: 'dark',
+      },
       hard: ['m1-5', 'm3-57'],
       saved: ['m2-16'],
+      excluded: ['m1-7', 'm2-3'],
     });
     const raw = JSON.parse(s.getItem(STORAGE_KEY)!);
     raw.hard.push('m9-1');
+    raw.excluded.push('m9-2', 'm1-7');
     s.setItem(STORAGE_KEY, JSON.stringify(raw));
     const loaded = loadState(s);
     assert.deepEqual(loaded.prefs, {
       setId: 'all',
       mode: 'choice',
+      difficulty: 'easy',
       counts: { m1: 15, all: 40 },
       limit: 10,
       theme: 'dark',
     });
     assert.deepEqual(loaded.hard, ['m1-5', 'm3-57']);
     assert.deepEqual(loaded.saved, ['m2-16']);
+    assert.deepEqual(loaded.excluded, ['m1-7', 'm2-3']);
   });
 
   it('migrates the first version (module 1 only)', () => {
@@ -100,6 +112,7 @@ describe('storage', () => {
     assert.deepEqual(loadState(s).prefs, {
       setId: 'all',
       mode: 'choice',
+      difficulty: 'hard',
       counts: { m1: 25, all: 30 },
       limit: 4,
       theme: 'system',
@@ -113,6 +126,35 @@ describe('storage', () => {
     assert.equal(loadState(s).prefs.theme, 'system');
     s.setItem(STORAGE_KEY, JSON.stringify({ prefs: { theme: 'light' } }));
     assert.equal(loadState(s).prefs.theme, 'light');
+  });
+
+  it('difficulty defaults to hard; exclusions default to an empty list (data from 2.2)', () => {
+    assert.equal(emptyState().prefs.difficulty, 'hard');
+    assert.deepEqual(emptyState().excluded, []);
+    const s = new MemoryStorage();
+    s.setItem(STORAGE_KEY, JSON.stringify({ prefs: { mode: 'choice', difficulty: 'weird' }, hard: [], saved: [] }));
+    const loaded = loadState(s);
+    assert.equal(loaded.prefs.difficulty, 'hard');
+    assert.deepEqual(loaded.excluded, []);
+  });
+
+  it('a saved 2.2 session without difficulty resumes with hard options', () => {
+    const s = new MemoryStorage();
+    const task = { kind: 'card', qid: 'm1-1', exam: false };
+    const session = {
+      v: 1,
+      config: { setId: 'm1', mode: 'cards', source: 'regular', limit: 5, count: 1, ids: null },
+      tasks: [task],
+      queue: [],
+      deferred: [],
+      current: 0,
+      results: [null],
+      skipped: [false],
+      failNoticeShown: false,
+      endedEarly: false,
+    };
+    s.setItem(STORAGE_KEY, JSON.stringify({ prefs: {}, hard: [], saved: [], session }));
+    assert.equal(loadState(s).session?.config.difficulty, 'hard');
   });
 
   it('drops an invalid saved session', () => {

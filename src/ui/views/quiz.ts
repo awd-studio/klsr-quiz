@@ -2,7 +2,7 @@ import { getQuestion } from '../../data/index.ts';
 import type { Question } from '../../data/types.ts';
 import { KIND_LABEL, TF_PREFIX, type Task } from '../../core/round.ts';
 import { currentResult, currentTask, stats, type TaskResult } from '../../core/session.ts';
-import { questionRef, renderAnswer, starButton } from '../components.ts';
+import { excludeButton, questionRef, renderAnswer, starButton } from '../components.ts';
 import { cx, h, type Child } from '../dom.ts';
 import type { Actions, Ctx, UiState } from '../state.ts';
 
@@ -77,6 +77,7 @@ export function quizView({ state, actions }: Ctx): HTMLElement {
           'Ліміт помилок досягнуто — тест не складено',
         )
       : null,
+    state.notice ? excludeNotice(state, actions) : null,
 
     h(
       'article',
@@ -86,12 +87,47 @@ export function quizView({ state, actions }: Ctx): HTMLElement {
         { class: 'qcard__meta' },
         h('span', { class: 'qcard__ref' }, questionRef(q)),
         tags,
-        starButton(saved, () => actions.toggleSaved(q.id)),
+        h(
+          'div',
+          { class: 'qcard__tools' },
+          excludeButton(() => actions.exclude(q.id)),
+          starButton(saved, () => actions.toggleSaved(q.id)),
+        ),
       ),
       body(task, q, state, actions, result),
     ),
     answered && task.kind !== 'card' ? feedback(task, q, result) : null,
     controls(task, state, actions, answered),
+  );
+}
+
+/** Пояснення після виключення: що сталося, де повернути, і «Скасувати». */
+function excludeNotice(state: UiState, actions: Actions): HTMLElement {
+  const n = state.notice!;
+  const q = getQuestion(n.qid)!;
+  return h(
+    'div',
+    { class: 'notice', role: 'status', 'data-testid': 'exclude-notice' },
+    h(
+      'p',
+      null,
+      h('b', null, `Питання «${questionRef(q)}» виключено.`),
+      ' Воно більше не з’являтиметься в тестах. ',
+      n.replaced
+        ? 'Замість нього додано інше питання — кількість питань не змінилась.'
+        : 'Інших питань для заміни немає, тому питань у тесті стало менше.',
+      ' Повернути його можна в меню «Виключені питання».',
+    ),
+    h(
+      'button',
+      {
+        type: 'button',
+        class: 'btn btn--ghost btn--auto btn--small',
+        'data-testid': 'undo-exclude',
+        onclick: actions.undoExclude,
+      },
+      'Скасувати',
+    ),
   );
 }
 
@@ -372,7 +408,7 @@ export function handleQuizKey(e: KeyboardEvent, state: UiState, actions: Actions
   const target = e.target as HTMLElement | null;
   const onButton = target?.tagName === 'BUTTON';
   /** Кнопки керування (Далі, Завершити, зірочка, меню) обробляють Enter самі. */
-  const onControl = !!target?.closest('.btns, .star, .topbar');
+  const onControl = !!target?.closest('.btns, .star, .iconbtn, .notice, .topbar');
 
   if (task.kind === 'card') {
     if ((key === ' ' && !onButton) || key === 'f') return (actions.flip(), true);

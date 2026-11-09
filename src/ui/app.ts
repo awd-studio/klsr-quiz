@@ -1,7 +1,7 @@
 import { getQuestion, questionsOfSet, isInSet, compareIds, sameQuestionGroup } from '../data/index.ts';
 import type { Question, QuestionId } from '../data/types.ts';
 import { defaultRng, shuffle, type Rng } from '../core/rng.ts';
-import { buildTasks, pickQuestions, type Response } from '../core/round.ts';
+import { buildTasks, pickQuestions, reshuffle, taskFor, type Response } from '../core/round.ts';
 import {
   advance,
   createSession,
@@ -11,6 +11,8 @@ import {
   isFinished,
   markFailNotice,
   needsFailNotice,
+  removeTask,
+  replaceTask,
   respond,
   skip,
   stats,
@@ -24,6 +26,8 @@ import { homeView } from './views/home.ts';
 import { quizView, handleQuizKey } from './views/quiz.ts';
 import { resultView } from './views/result.ts';
 import { savedView } from './views/saved.ts';
+import { excludedView } from './views/excluded.ts';
+import { changelogView } from './views/changelog.ts';
 import { modal } from './components.ts';
 import { h } from './dom.ts';
 import { revealAnswer, scrollToQuestion } from './scroll.ts';
@@ -59,6 +63,7 @@ export class App {
       order: [],
       modal: null,
       justAnswered: false,
+      notice: null,
     };
     this.actions = this.createActions();
     document.addEventListener('keydown', (e) => this.onKey(e));
@@ -78,7 +83,11 @@ export class App {
           ? resultView(ctx)
           : screen === 'saved'
             ? savedView(ctx)
-            : homeView(ctx);
+            : screen === 'excluded'
+              ? excludedView(ctx)
+              : screen === 'changelog'
+                ? changelogView(ctx)
+                : homeView(ctx);
     applyTheme(this.state.data.prefs.theme);
     const nodes: Node[] = [view];
     if (m) nodes.push(this.renderModal());
@@ -102,7 +111,10 @@ export class App {
 
   private set(patch: Partial<UiState>, persist = true): void {
     // Анімація відповіді — лише в першому рендері після неї.
-    this.state = { ...this.state, justAnswered: false, ...patch };
+    const next: UiState = { ...this.state, justAnswered: false, ...patch };
+    // Повідомлення про виключення — лише поки на екрані те саме питання.
+    const shown = next.screen === 'quiz' && next.session ? (currentTask(next.session)?.qid ?? null) : undefined;
+    this.state = next.notice && next.notice.shownOn !== shown ? { ...next, notice: null } : next;
     if (persist) this.persist();
     this.render();
   }
@@ -130,6 +142,8 @@ export class App {
     return { ...this.state.data, hard, saved };
   }
 
+  private isExcluded = (id: QuestionId): boolean => this.state.data.excluded.includes(id);
+
   private confirm(title: string, text: string, okLabel: string, onOk: () => void): void {
     this.set({ modal: { kind: 'confirm', title, text, okLabel, onOk } }, false);
   }
@@ -138,17 +152,33 @@ export class App {
 
   private configFor(source: SessionConfig['source'], ids: readonly QuestionId[] | null = null): SessionConfig {
     const p = this.state.data.prefs;
-    return { setId: p.setId, mode: p.mode, source, limit: p.limit, count: p.counts[p.setId], ids };
+    return {
+      setId: p.setId,
+      mode: p.mode,
+      difficulty: p.difficulty,
+      source,
+      limit: p.limit,
+      count: p.counts[p.setId],
+      ids,
+    };
+  }
+
+  /** Питання набору, крім виключених. */
+  private available(setId: SessionConfig['setId']): Question[] {
+    return questionsOfSet(setId).filter((q) => !this.isExcluded(q.id));
   }
 
   private questionsFor(config: SessionConfig): Question[] {
     if (config.ids) {
       return shuffle(
-        config.ids.map((id) => getQuestion(id)).filter((q): q is Question => !!q),
+        config.ids
+          .filter((id) => !this.isExcluded(id))
+          .map((id) => getQuestion(id))
+          .filter((q): q is Question => !!q),
         this.rng,
       );
     }
-    return pickQuestions(questionsOfSet(config.setId), config.count, this.rng, sameQuestionGroup);
+    return pickQuestions(this.available(config.setId), config.count, this.rng, sameQuestionGroup);
   }
 
   private launch(config: SessionConfig): void {
@@ -156,6 +186,7 @@ export class App {
     if (questions.length === 0) return;
     const tasks = buildTasks(questions, {
       mode: config.mode,
+      difficulty: config.difficulty,
       rng: this.rng,
       ...(this.opts.altShare === undefined ? {} : { altShare: this.opts.altShare }),
     });
@@ -180,7 +211,81 @@ export class App {
 
   private idsInSet(ids: readonly QuestionId[]): QuestionId[] {
     const setId = this.state.data.prefs.setId;
-    return ids.filter((id) => isInSet(setId, id));
+    return ids.filter((id) => isInSet(setId, id) && !this.isExcluded(id));
+  }
+
+  /**
+   * Пропущене питання повертається або тест продовжують — варіанти
+   * перемішуються заново, щоб не запам’ятовувати їхнє розташування.
+   */
+  private freshen(s: Session, force = false): Session {
+    const i = s.current;
+    if (i === null || s.results[i] || !(force || s.skipped[i])) return s;
+    const tasks = s.tasks.slice();
+    tasks[i] = reshuffle(tasks[i]!, this.rng);
+    return { ...s, tasks };
+  }
+
+  /**
+   * Виключає питання: запам’ятовує його і прибирає з поточного тесту.
+   * У звичайному тесті на його місце стає інше питання набору, якого ще немає в раунді;
+   * якщо таких не лишилось (або тест зі списку — складні, збережені, помилки) — питань стає менше.
+   */
+  private excludeQuestion(id: QuestionId): void {
+    if (this.isExcluded(id)) return;
+    const excluded = [...this.state.data.excluded, id].sort(compareIds);
+    const data = { ...this.state.data, excluded };
+    const s = this.state.session;
+    const index = s?.current ?? null;
+    if (!s || index === null || this.state.screen !== 'quiz' || s.tasks[index]?.qid !== id) {
+      this.set({ data });
+      return;
+    }
+
+    const { config } = s;
+    let replacement: Question | undefined;
+    if (!config.ids) {
+      const used = new Set(s.tasks.map((t) => sameQuestionGroup(t.qid)));
+      const pool = questionsOfSet(config.setId).filter(
+        (q) => !excluded.includes(q.id) && !used.has(sameQuestionGroup(q.id)),
+      );
+      replacement = pool.length ? pool[Math.floor(this.rng() * pool.length)] : undefined;
+    }
+    const session = replacement
+      ? replaceTask(s, index, taskFor(replacement, null, this.rng, config.mode, config.difficulty))
+      : removeTask(s, index);
+
+    this.state = { ...this.state, data };
+    if (session.tasks.length === 0) {
+      this.state = { ...this.state, data: { ...data, session: null } };
+      this.set({ screen: 'home', session: null, modal: null });
+      return;
+    }
+    if (isFinished(session)) {
+      this.toResult(session);
+      return;
+    }
+    const shownOn = currentTask(session)?.qid ?? null;
+    this.set({
+      session,
+      revealed: false,
+      multi: [],
+      order: [],
+      notice: { qid: id, replaced: !!replacement, shownOn, before: s },
+    });
+  }
+
+  private undoExclude(): void {
+    const n = this.state.notice;
+    if (!n || this.state.screen !== 'quiz') return;
+    const excluded = this.state.data.excluded.filter((x) => x !== n.qid);
+    this.state = { ...this.state, data: { ...this.state.data, excluded }, notice: null };
+    this.set({ session: n.before, revealed: false, multi: [], order: [] });
+  }
+
+  private restore(ids: readonly QuestionId[]): void {
+    const excluded = this.state.data.excluded.filter((x) => !ids.includes(x));
+    this.set({ data: { ...this.state.data, excluded }, modal: null });
   }
 
   /** Чи вже відповіли на поточне завдання (варіанти після цього не змінюються). */
@@ -218,7 +323,7 @@ export class App {
     if (!s) return;
     const next = advance(s);
     if (isFinished(next)) this.toResult(next);
-    else this.set({ session: next, revealed: false, multi: [], order: [] });
+    else this.set({ session: this.freshen(next), revealed: false, multi: [], order: [] });
   }
 
   private toResult(s: Session): void {
@@ -232,6 +337,7 @@ export class App {
     return {
       setSet: (setId) => this.setPrefs({ setId }),
       setMode: (mode) => this.setPrefs({ mode }),
+      setDifficulty: (difficulty) => this.setPrefs({ difficulty }),
       setCount: (count) => this.setCount(count),
       setLimit: (limit) => this.setPrefs({ limit }),
       setTheme: (theme) => this.setPrefs({ theme }),
@@ -251,7 +357,15 @@ export class App {
       },
       resume: () => {
         const s = this.state.data.session;
-        if (s) this.set({ screen: 'quiz', session: s, revealed: false, multi: [], order: [], modal: null });
+        if (s)
+          this.set({
+            screen: 'quiz',
+            session: this.freshen(s, true),
+            revealed: false,
+            multi: [],
+            order: [],
+            modal: null,
+          });
       },
       clearHard: () =>
         this.confirm(
@@ -290,7 +404,7 @@ export class App {
       next: () => this.goNext(),
       skip: () => {
         const s = this.state.session;
-        if (s) this.set({ session: skip(s), revealed: false, multi: [], order: [] });
+        if (s) this.set({ session: this.freshen(skip(s)), revealed: false, multi: [], order: [] });
       },
       finish: () =>
         this.confirm('Завершити тест?', 'Питання без відповіді не будуть зараховані.', 'Завершити', () =>
@@ -305,6 +419,19 @@ export class App {
         this.set({ data: this.setLists(this.state.data.hard, next) });
       },
       openSaved: () => this.set({ screen: 'saved', modal: null }),
+
+      exclude: (id) => this.excludeQuestion(id),
+      undoExclude: () => this.undoExclude(),
+      restoreExcluded: (id) => this.restore([id]),
+      restoreAllExcluded: () =>
+        this.confirm(
+          'Повернути всі виключені питання?',
+          'Усі виключені питання знову з’являтимуться в тестах.',
+          'Повернути всі',
+          () => this.restore(this.state.data.excluded),
+        ),
+      openExcluded: () => this.set({ screen: 'excluded', modal: null }),
+      openChangelog: () => this.set({ screen: 'changelog', modal: null }),
       retryMistakes: () => {
         const s = this.state.session;
         if (!s) return;

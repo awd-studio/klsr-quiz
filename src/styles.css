@@ -149,6 +149,13 @@ h2:focus {
   text-align: center;
 }
 
+.panel__sub {
+  font-size: 13px;
+  margin: 14px 0 8px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
 .seg {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -337,6 +344,64 @@ h2:focus {
   font-size: 13px;
 }
 
+.footer__version {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.link--inline {
+  padding: 0;
+  font-size: inherit;
+}
+
+/* ───────── Що нового ───────── */
+
+.release__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.panel > h2.release__head {
+  color: var(--text);
+  font-size: 16px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.release__date {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 13px;
+  margin-left: auto;
+}
+
+.release__list {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.release__list li {
+  margin: 4px 0;
+  overflow-wrap: anywhere;
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9em;
+  background: var(--accent-2);
+  color: var(--text);
+  padding: 1px 5px;
+  border-radius: 5px;
+}
+
+.saved__tag {
+  margin-left: 8px;
+}
+
 /* ───────── Quiz ───────── */
 
 .topbar {
@@ -431,7 +496,9 @@ h2:focus {
   margin-bottom: 8px;
 }
 
-.qcard__meta .star {
+.qcard__tools {
+  display: flex;
+  gap: 6px;
   margin-left: auto;
 }
 
@@ -477,6 +544,59 @@ h2:focus {
 .star.is-on {
   color: #e0a100;
   border-color: #e0a100;
+}
+
+/* Кнопка-значок (виключити питання) — того ж розміру, що й зірочка. */
+.iconbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    border-color 0.15s;
+}
+
+.exclude:hover,
+.exclude:focus-visible {
+  color: var(--bad);
+  border-color: var(--bad);
+}
+
+/* Повідомлення про виключене питання. */
+.notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 10px;
+  background: var(--warn-bg);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--warn);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+  margin-bottom: 12px;
+  animation: fade-in 0.15s ease-out;
+}
+
+/* На вузьких екранах кнопка «Скасувати» переноситься під текст. */
+.notice p {
+  margin: 0;
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.notice .btn {
+  flex: 0 0 auto;
 }
 
 .reveal {
@@ -784,9 +904,13 @@ h2:focus {
   color: var(--muted);
 }
 
-.saved__q {
+/* Текст питання в картці списку — не заголовок секції панелі. */
+.panel > .saved__q {
   font-size: 16px;
   margin: 0 0 8px;
+  color: var(--text);
+  text-transform: none;
+  letter-spacing: 0;
 }
 
 .saved summary {

@@ -7,6 +7,7 @@ export function savedView({ state, actions }: Ctx): HTMLElement {
   const { prefs, saved } = state.data;
   const inSet = saved.filter((id) => isInSet(prefs.setId, id));
   const elsewhere = saved.length - inSet.length;
+  const playable = inSet.filter((id) => !state.data.excluded.includes(id)).length;
 
   return h(
     'main',
@@ -23,7 +24,7 @@ export function savedView({ state, actions }: Ctx): HTMLElement {
       `Набір «${SETS[prefs.setId].title}». Позначайте питання зірочкою ☆ під час тесту.`,
       elsewhere ? ` Ще ${elsewhere} — в інших модулях (оберіть набір «Загальний»).` : '',
     ),
-    inSet.length
+    playable
       ? h(
           'div',
           { class: 'btns' },
@@ -33,7 +34,11 @@ export function savedView({ state, actions }: Ctx): HTMLElement {
             `Пройти збережені (${prefs.mode === 'cards' ? 'картки' : 'вибір варіанту'})`,
           ),
         )
-      : h('p', { class: 'empty' }, 'Поки що немає збережених питань.'),
+      : h(
+          'p',
+          { class: 'empty' },
+          inSet.length ? 'Усі збережені питання виключено.' : 'Поки що немає збережених питань.',
+        ),
     h(
       'div',
       { class: 'saved-list' },
@@ -45,7 +50,12 @@ export function savedView({ state, actions }: Ctx): HTMLElement {
           h(
             'div',
             { class: 'saved__head' },
-            h('span', { class: 'muted' }, questionRef(q)),
+            h(
+              'span',
+              { class: 'muted' },
+              questionRef(q),
+              state.data.excluded.includes(id) ? h('span', { class: 'tag tag--warn saved__tag' }, 'виключене') : null,
+            ),
             h(
               'button',
               {

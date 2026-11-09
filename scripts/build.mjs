@@ -18,6 +18,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dist = path.join(root, 'dist');
 const args = new Set(process.argv.slice(2));
 const watch = args.has('--watch');
+const pkg = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
 const serve = args.has('--serve');
 
 /** @param {esbuild.OutputFile[]} files */
@@ -65,6 +66,9 @@ const options = {
   legalComments: 'none',
   charset: 'utf8',
   logLevel: 'warning',
+  // Версія для підвалу і сторінки «Що нового»; CHANGELOG.md вбудовується як текст.
+  define: { __APP_VERSION__: JSON.stringify(pkg.version) },
+  loader: { '.md': 'text' },
   plugins: [inlineHtml],
 };
 

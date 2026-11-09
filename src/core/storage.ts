@@ -1,6 +1,6 @@
 import { getQuestion } from '../data/index.ts';
 import type { QuestionId, SetId } from '../data/types.ts';
-import type { Mode, Task } from './round.ts';
+import type { Difficulty, Mode, Task } from './round.ts';
 import type { Session } from './session.ts';
 
 /** Мінімальний інтерфейс localStorage (для тестів — будь-який об’єкт з цими методами). */
@@ -13,6 +13,8 @@ export interface StorageLike {
 export interface Prefs {
   readonly setId: SetId;
   readonly mode: Mode;
+  /** Складність варіантів у режимі вибору (за замовчуванням — складні). */
+  readonly difficulty: Difficulty;
   /** Кількість питань у раунді — окремо для кожного набору. */
   readonly counts: Readonly<Record<SetId, number>>;
   readonly limit: number;
@@ -29,6 +31,8 @@ export interface PersistedState {
   readonly hard: readonly QuestionId[];
   /** Питання, збережені користувачем. */
   readonly saved: readonly QuestionId[];
+  /** Виключені питання — не показуються в жодному тесті, доки їх не повернуть. */
+  readonly excluded: readonly QuestionId[];
   /** Незавершений тест (для продовження після перезавантаження). */
   readonly session: Session | null;
 }
@@ -39,9 +43,23 @@ export const LEGACY_KEY = 'm1quiz_v1';
 /** За замовчуванням: «Модуль 1» — 20 питань, «Загальний» — 30 (як на заліку). */
 export const DEFAULT_COUNTS: Readonly<Record<SetId, number>> = { m1: 20, all: 30 };
 
-export const DEFAULT_PREFS: Prefs = { setId: 'm1', mode: 'cards', counts: DEFAULT_COUNTS, limit: 5, theme: 'system' };
+export const DEFAULT_PREFS: Prefs = {
+  setId: 'm1',
+  mode: 'cards',
+  difficulty: 'hard',
+  counts: DEFAULT_COUNTS,
+  limit: 5,
+  theme: 'system',
+};
 
-export const emptyState = (): PersistedState => ({ v: 2, prefs: DEFAULT_PREFS, hard: [], saved: [], session: null });
+export const emptyState = (): PersistedState => ({
+  v: 2,
+  prefs: DEFAULT_PREFS,
+  hard: [],
+  saved: [],
+  excluded: [],
+  session: null,
+});
 
 type Json = Record<string, unknown>;
 const isObj = (v: unknown): v is Json => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -58,6 +76,7 @@ function parsePrefs(v: unknown): Prefs {
   return {
     setId: v.setId === 'all' ? 'all' : 'm1',
     mode: v.mode === 'choice' ? 'choice' : 'cards',
+    difficulty: v.difficulty === 'easy' ? 'easy' : 'hard',
     counts: parseCounts(v),
     limit: isInt(v.limit, 1) ? v.limit : DEFAULT_PREFS.limit,
     theme: v.theme === 'light' || v.theme === 'dark' ? v.theme : 'system',
@@ -80,7 +99,9 @@ function parseSession(v: unknown): Session | null {
   if (!tasks.every((t) => isObj(t) && typeof t.qid === 'string' && !!getQuestion(t.qid))) return null;
   if (!Array.isArray(v.queue) || !Array.isArray(v.deferred) || !Array.isArray(v.skipped)) return null;
   if (!(v.current === null || isInt(v.current, 0)) || !isObj(v.config)) return null;
-  return v as unknown as Session;
+  // Сесії до 2.3 не мають складності — це були складні варіанти.
+  const config = { ...v.config, difficulty: v.config.difficulty === 'easy' ? 'easy' : 'hard' };
+  return { ...v, config } as unknown as Session;
 }
 
 /** Мігрує стан першої версії (лише модуль 1, номери питань). */
@@ -107,6 +128,7 @@ export function loadState(storage: StorageLike | null): PersistedState {
         prefs: parsePrefs(data.prefs),
         hard: validIds(data.hard),
         saved: validIds(data.saved),
+        excluded: validIds(data.excluded),
         session: parseSession(data.session),
       };
     }

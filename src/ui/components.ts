@@ -165,6 +165,65 @@ export function themeSwitch(value: Theme, onChange: (t: Theme) => void): HTMLEle
   );
 }
 
+/** Значок «виключити»: перекреслене коло. */
+function banIcon(): SVGSVGElement {
+  const svg = document.createElementNS(SVG, 'svg');
+  for (const [k, v] of Object.entries({
+    viewBox: '0 0 24 24',
+    width: '18',
+    height: '18',
+    'aria-hidden': 'true',
+    fill: 'none',
+    stroke: 'currentColor',
+    'stroke-width': '2',
+    'stroke-linecap': 'round',
+  }))
+    svg.setAttribute(k, v);
+  const path = document.createElementNS(SVG, 'path');
+  path.setAttribute('d', 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18zM5.6 5.6l12.8 12.8');
+  svg.appendChild(path);
+  return svg;
+}
+
+export const EXCLUDE_TITLE = 'Виключити питання: більше не показувати його в тестах';
+
+/** Кнопка «виключити питання» поряд із зірочкою. */
+export function excludeButton(onExclude: () => void): HTMLElement {
+  return h(
+    'button',
+    {
+      type: 'button',
+      class: 'iconbtn exclude',
+      'aria-label': EXCLUDE_TITLE,
+      title: EXCLUDE_TITLE,
+      'data-testid': 'exclude',
+      onclick: onExclude,
+    },
+    banIcon(),
+  );
+}
+
+/** Підвал: версія, «Що нового» і (на сайті) посилання на офлайн-файл. */
+export function footer(version: string, onChangelog: () => void, extra: Child = null): HTMLElement {
+  return h(
+    'footer',
+    { class: 'footer' },
+    extra,
+    h('span', null, 'Питання та відповіді — дослівно з файлу «Залікові питання КЛСР».'),
+    h(
+      'div',
+      { class: 'footer__version' },
+      h('span', { 'data-testid': 'version' }, `Версія ${version}`),
+      h('span', { 'aria-hidden': 'true' }, '·'),
+      h(
+        'button',
+        { type: 'button', class: 'link link--inline', 'data-testid': 'changelog', onclick: onChangelog },
+        'Що нового',
+      ),
+    ),
+  );
+}
+
 export function starButton(saved: boolean, onToggle: () => void): HTMLElement {
   return h(
     'button',

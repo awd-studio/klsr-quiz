@@ -1,8 +1,19 @@
+import { QUESTIONS, sameQuestionGroup } from '../data/index.ts';
 import type { Answer, Question, QuestionId, Variant } from '../data/types.ts';
+import { easyDistractors, easyExtraItems } from './distractors.ts';
 import { pick, shuffle, type Rng } from './rng.ts';
 import { answerItems, stripNumber } from './text.ts';
 
 export type Mode = 'cards' | 'choice';
+
+/**
+ * Складність варіантів у режимі вибору:
+ * `hard` — неправильні варіанти з файлу, дуже схожі на правильний (як на заліку);
+ * `easy` — відповіді на суміжні питання: та сама форма, але помітно інший зміст.
+ */
+export type Difficulty = 'hard' | 'easy';
+
+export const DIFFICULTY_LABEL: Readonly<Record<Difficulty, string>> = { hard: 'складні', easy: 'легкі' };
 
 export interface ChoiceOption {
   readonly answer: Answer;
@@ -68,6 +79,8 @@ export interface RoundOptions {
   readonly rng: Rng;
   /** Частка питань в альтернативних форматах (режим «Вибір варіанту»), за замовчуванням ALT_SHARE. */
   readonly altShare?: number;
+  /** Складність неправильних варіантів (за замовчуванням `hard`). */
+  readonly difficulty?: Difficulty;
 }
 
 /** Частка питань у форматах Так/Ні, термін, кілька відповідей, послідовність. */
@@ -111,7 +124,7 @@ export function pickQuestions(
  * У режимі вибору ~10% питань (з тих, що мають альтернативні формати) подаються інакше.
  */
 export function buildTasks(questions: readonly Question[], options: RoundOptions): Task[] {
-  const { mode, rng, altShare = ALT_SHARE } = options;
+  const { mode, rng, altShare = ALT_SHARE, difficulty = 'hard' } = options;
   const alt = new Set<QuestionId>();
   if (mode === 'choice') {
     const candidates = shuffle(
@@ -120,10 +133,28 @@ export function buildTasks(questions: readonly Question[], options: RoundOptions
     );
     for (const q of candidates.slice(0, altCount(questions.length, altShare))) alt.add(q.id);
   }
-  return questions.map((q) => taskFor(q, alt.has(q.id) ? pick(q.variants, rng) : null, rng, mode));
+  return questions.map((q) => taskFor(q, alt.has(q.id) ? pick(q.variants, rng) : null, rng, mode, difficulty));
 }
 
-export function taskFor(q: Question, variant: Variant | null, rng: Rng, mode: Mode = 'choice'): Task {
+/** Неправильні варіанти потрібної складності; якщо легких не вистачає — доповнюємо складними. */
+function wrongAnswers(q: Question, hard: readonly Answer[], difficulty: Difficulty, rng: Rng): readonly Answer[] {
+  if (difficulty === 'hard') return hard;
+  const easy = easyDistractors(q, QUESTIONS, rng, hard.length, sameQuestionGroup);
+  return [...easy, ...hard.slice(easy.length)];
+}
+
+/** Варіанти вибору: правильна відповідь (завжди `Question.a`) + неправильні, у випадковому порядку. */
+function choiceOptions(correct: Answer, wrong: readonly Answer[], rng: Rng): ChoiceOption[] {
+  return shuffle([{ answer: correct, correct: true }, ...wrong.map((answer) => ({ answer, correct: false }))], rng);
+}
+
+export function taskFor(
+  q: Question,
+  variant: Variant | null,
+  rng: Rng,
+  mode: Mode = 'choice',
+  difficulty: Difficulty = 'hard',
+): Task {
   if (variant === null) {
     if (mode === 'cards') return { kind: 'card', qid: q.id, exam: false };
     return {
@@ -132,7 +163,7 @@ export function taskFor(q: Question, variant: Variant | null, rng: Rng, mode: Mo
       source: 'base',
       prompt: q.q,
       quote: null,
-      options: shuffle([{ answer: q.a, correct: true }, ...q.w.map((answer) => ({ answer, correct: false }))], rng),
+      options: choiceOptions(q.a, wrongAnswers(q, q.w, difficulty, rng), rng),
       exam: false,
     };
   }
@@ -160,13 +191,17 @@ export function taskFor(q: Question, variant: Variant | null, rng: Rng, mode: Mo
         source: 'mcq',
         prompt: variant.prompt,
         quote: null,
-        options: shuffle(
-          [{ answer: q.a, correct: true }, ...variant.wrong.map((answer) => ({ answer, correct: false }))],
-          rng,
-        ),
+        options: choiceOptions(q.a, wrongAnswers(q, variant.wrong, difficulty, rng), rng),
         exam,
       };
-    case 'multi':
+    case 'multi': {
+      const extra =
+        difficulty === 'easy'
+          ? easyExtraItems(q, QUESTIONS, rng, variant.extra.length, sameQuestionGroup)
+          : variant.extra.slice();
+      // Якщо легких пунктів не вистачило — доповнюємо пунктами з файлу.
+      for (const item of variant.extra)
+        if (extra.length < variant.extra.length && !extra.includes(item)) extra.push(item);
       return {
         kind: 'multi',
         qid: q.id,
@@ -174,12 +209,13 @@ export function taskFor(q: Question, variant: Variant | null, rng: Rng, mode: Mo
         options: shuffle(
           [
             ...answerItems(q.a).map((text) => ({ text, correct: true })),
-            ...variant.extra.map((text) => ({ text, correct: false })),
+            ...extra.map((text) => ({ text, correct: false })),
           ],
           rng,
         ),
         exam,
       };
+    }
     case 'order': {
       const items = (variant.items ?? answerItems(q.a)).map(stripNumber);
       return {
@@ -191,6 +227,23 @@ export function taskFor(q: Question, variant: Variant | null, rng: Rng, mode: Mo
         exam,
       };
     }
+  }
+}
+
+/**
+ * Нове випадкове розташування варіантів для завдання без відповіді
+ * (коли пропущене питання повертається або тест продовжують після перерви).
+ */
+export function reshuffle(task: Task, rng: Rng): Task {
+  switch (task.kind) {
+    case 'choice':
+      return { ...task, options: shuffle(task.options, rng) };
+    case 'multi':
+      return { ...task, options: shuffle(task.options, rng) };
+    case 'order':
+      return { ...task, shuffled: shuffledIndices(task.items.length, rng) };
+    default:
+      return task;
   }
 }
 

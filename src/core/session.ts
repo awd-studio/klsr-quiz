@@ -1,5 +1,5 @@
 import type { QuestionId, SetId } from '../data/types.ts';
-import { isCorrect, type Mode, type Response, type Task } from './round.ts';
+import { isCorrect, type Difficulty, type Mode, type Response, type Task } from './round.ts';
 
 /** Звідки взялися питання раунду. */
 export type Source = 'regular' | 'hard' | 'saved' | 'retry';
@@ -7,6 +7,8 @@ export type Source = 'regular' | 'hard' | 'saved' | 'retry';
 export interface SessionConfig {
   readonly setId: SetId;
   readonly mode: Mode;
+  /** Складність варіантів (лише для режиму вибору). */
+  readonly difficulty: Difficulty;
   readonly source: Source;
   /** Кількість помилок, за якої тест вважається нескладеним. */
   readonly limit: number;
@@ -90,6 +92,41 @@ export function skip(s: Session): Session {
   const skipped = s.skipped.slice();
   skipped[s.current] = true;
   return advance({ ...s, deferred: [...s.deferred, s.current], skipped });
+}
+
+/**
+ * Замінює завдання `index` іншим (наприклад, коли питання виключили):
+ * нове завдання займає те саме місце в черзі, відповідь і позначка «пропущене» скидаються.
+ */
+export function replaceTask(s: Session, index: number, task: Task): Session {
+  if (index < 0 || index >= s.tasks.length) return s;
+  const tasks = s.tasks.slice();
+  const results = s.results.slice();
+  const skipped = s.skipped.slice();
+  tasks[index] = task;
+  results[index] = null;
+  skipped[index] = false;
+  return { ...s, tasks, results, skipped };
+}
+
+/**
+ * Прибирає завдання `index` з раунду (кількість питань зменшується).
+ * Якщо це поточне завдання — переходимо до наступного.
+ */
+export function removeTask(s: Session, index: number): Session {
+  if (index < 0 || index >= s.tasks.length) return s;
+  const keep = (_: unknown, i: number) => i !== index;
+  const shift = (i: number) => (i > index ? i - 1 : i);
+  const next: Session = {
+    ...s,
+    tasks: s.tasks.filter(keep),
+    results: s.results.filter(keep),
+    skipped: s.skipped.filter(keep),
+    queue: s.queue.filter((i) => i !== index).map(shift),
+    deferred: s.deferred.filter((i) => i !== index).map(shift),
+    current: s.current === null || s.current === index ? null : shift(s.current),
+  };
+  return s.current === index ? advance(next) : next;
 }
 
 export function finishEarly(s: Session): Session {

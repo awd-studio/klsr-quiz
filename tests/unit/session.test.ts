@@ -12,6 +12,8 @@ import {
   isFinished,
   markFailNotice,
   needsFailNotice,
+  removeTask,
+  replaceTask,
   respond,
   skip,
   stats,
@@ -22,6 +24,7 @@ import {
 const config: SessionConfig = {
   setId: 'm1',
   mode: 'cards',
+  difficulty: 'hard',
   source: 'regular',
   limit: 2,
   count: 4,
@@ -85,6 +88,48 @@ describe('session', () => {
     s = markFailNotice(s);
     assert.ok(!needsFailNotice(s));
     assert.deepEqual(wrongTaskIndices(s), [0, 1]);
+  });
+
+  it('replaceTask puts another question in the same place and resets its state', () => {
+    let s = createSession(config, tasks);
+    s = skip(s); // m1-1 → у кінець
+    s = respond(s, unknown); // m1-2 — помилка
+    const other = taskFor(getQuestion('m1-50')!, null, seeded(1), 'cards');
+    s = replaceTask(s, 1, other);
+    assert.equal(currentTask(s)!.qid, 'm1-50');
+    assert.equal(s.results[1], null);
+    assert.equal(stats(s).total, 4);
+    assert.equal(stats(s).wrong, 0);
+    const order: string[] = [];
+    while (!isFinished(s)) {
+      order.push(currentTask(s)!.qid);
+      s = advance(respond(s, known));
+    }
+    assert.deepEqual(order, ['m1-50', 'm1-3', 'm1-4', 'm1-1']);
+  });
+
+  it('removeTask drops the current task, re-indexes the queue and moves on', () => {
+    let s = createSession(config, tasks);
+    s = advance(respond(s, known)); // m1-1 ✓
+    s = skip(s); // m1-2 → у кінець
+    assert.equal(currentTask(s)!.qid, 'm1-3');
+    s = removeTask(s, s.current!);
+    assert.equal(stats(s).total, 3);
+    assert.equal(currentTask(s)!.qid, 'm1-4');
+    const order: string[] = [];
+    while (!isFinished(s)) {
+      order.push(currentTask(s)!.qid);
+      s = advance(respond(s, known));
+    }
+    assert.deepEqual(order, ['m1-4', 'm1-2']);
+    assert.deepEqual(stats(s), { total: 3, answered: 3, correct: 3, wrong: 0, pendingSkipped: 0 });
+  });
+
+  it('removeTask of the last remaining task finishes an empty session', () => {
+    let s = createSession(config, tasks.slice(0, 1));
+    s = removeTask(s, 0);
+    assert.ok(isFinished(s));
+    assert.equal(s.tasks.length, 0);
   });
 
   it('finishEarly ends the session and keeps results', () => {

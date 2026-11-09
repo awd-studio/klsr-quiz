@@ -1,9 +1,20 @@
 import type { QuestionId, SetId } from '../data/types.ts';
-import type { Mode } from '../core/round.ts';
+import type { Difficulty, Mode } from '../core/round.ts';
 import type { Session } from '../core/session.ts';
 import type { PersistedState, Theme } from '../core/storage.ts';
 
-export type Screen = 'home' | 'quiz' | 'result' | 'saved';
+export type Screen = 'home' | 'quiz' | 'result' | 'saved' | 'excluded' | 'changelog';
+
+/** Повідомлення після виключення питання (з можливістю скасувати). */
+export interface ExcludeNotice {
+  readonly qid: QuestionId;
+  /** Замість виключеного питання додано інше (інакше — кількість питань зменшилась). */
+  readonly replaced: boolean;
+  /** Питання, на якому показується повідомлення (зникає при переході до іншого). */
+  readonly shownOn: QuestionId | null;
+  /** Стан тесту до виключення — для «Скасувати». */
+  readonly before: Session;
+}
 
 export type ModalState =
   | { readonly kind: 'fail' }
@@ -29,11 +40,13 @@ export interface UiState {
   readonly modal: ModalState | null;
   /** Щойно відповіли на поточне завдання: анімувати й показати правильний варіант. */
   readonly justAnswered: boolean;
+  readonly notice: ExcludeNotice | null;
 }
 
 export interface Actions {
   setSet(id: SetId): void;
   setMode(mode: Mode): void;
+  setDifficulty(d: Difficulty): void;
   setCount(n: number): void;
   setLimit(n: number): void;
   setTheme(theme: Theme): void;
@@ -61,6 +74,13 @@ export interface Actions {
 
   toggleSaved(id: QuestionId): void;
   openSaved(): void;
+
+  exclude(id: QuestionId): void;
+  undoExclude(): void;
+  restoreExcluded(id: QuestionId): void;
+  restoreAllExcluded(): void;
+  openExcluded(): void;
+  openChangelog(): void;
   retryMistakes(): void;
   again(): void;
   home(): void;
