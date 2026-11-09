@@ -1,6 +1,7 @@
 import { getQuestion } from '../../data/index.ts';
 import { questionRef, renderAnswer } from '../components.ts';
 import { h } from '../dom.ts';
+import { icon } from '../icons.ts';
 import type { Ctx } from '../state.ts';
 
 /** Список виключених питань (з усіх модулів) з можливістю повернути будь-яке. */
@@ -13,14 +14,14 @@ export function excludedView({ state, actions }: Ctx): HTMLElement {
     h(
       'div',
       { class: 'topbar' },
-      h('button', { type: 'button', class: 'topbar__back', onclick: actions.home }, '← Меню'),
+      h('button', { type: 'button', class: 'topbar__back', onclick: actions.home }, icon('back'), 'Меню'),
     ),
     h('h1', { tabindex: '-1', 'data-autofocus': true }, `Виключені питання (${excluded.length})`),
     h(
       'p',
       { class: 'sub' },
       'Виключені питання не з’являються в жодному тесті — ні в картках, ні у виборі варіанту, ні серед складних чи збережених. ',
-      'Виключити питання можна значком ⊘ біля зірочки під час тесту. Натисніть «Повернути», щоб питання знову могло випадати.',
+      'Виключити питання можна значком «виключити» (перекреслене коло) біля зірочки під час тесту. Натисніть «Повернути», щоб питання знову могло випадати.',
     ),
     excluded.length
       ? h(
@@ -34,6 +35,7 @@ export function excludedView({ state, actions }: Ctx): HTMLElement {
               'data-testid': 'restore-all',
               onclick: actions.restoreAllExcluded,
             },
+            icon('undo'),
             `Повернути всі (${excluded.length})`,
           ),
         )
@@ -59,6 +61,7 @@ export function excludedView({ state, actions }: Ctx): HTMLElement {
                 'aria-label': `Повернути питання ${questionRef(q)}`,
                 onclick: () => actions.restoreExcluded(id),
               },
+              icon('undo', 16),
               'Повернути',
             ),
           ),

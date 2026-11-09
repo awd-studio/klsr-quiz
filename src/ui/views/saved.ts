@@ -1,6 +1,7 @@
 import { SETS, getQuestion, isInSet } from '../../data/index.ts';
 import { questionRef, renderAnswer } from '../components.ts';
 import { h } from '../dom.ts';
+import { icon } from '../icons.ts';
 import type { Ctx } from '../state.ts';
 
 export function savedView({ state, actions }: Ctx): HTMLElement {
@@ -15,13 +16,13 @@ export function savedView({ state, actions }: Ctx): HTMLElement {
     h(
       'div',
       { class: 'topbar' },
-      h('button', { type: 'button', class: 'topbar__back', onclick: actions.home }, '← Меню'),
+      h('button', { type: 'button', class: 'topbar__back', onclick: actions.home }, icon('back'), 'Меню'),
     ),
     h('h1', { tabindex: '-1', 'data-autofocus': true }, `Збережені питання (${inSet.length})`),
     h(
       'p',
       { class: 'sub' },
-      `Набір «${SETS[prefs.setId].title}». Позначайте питання зірочкою ☆ під час тесту.`,
+      `Набір «${SETS[prefs.setId].title}». Позначайте питання зірочкою під час тесту.`,
       elsewhere ? ` Ще ${elsewhere} — в інших модулях (оберіть набір «Загальний»).` : '',
     ),
     playable
@@ -31,6 +32,7 @@ export function savedView({ state, actions }: Ctx): HTMLElement {
           h(
             'button',
             { type: 'button', class: 'btn', 'data-testid': 'start-saved', onclick: actions.startSaved },
+            icon('play'),
             `Пройти збережені (${prefs.mode === 'cards' ? 'картки' : 'вибір варіанту'})`,
           ),
         )
@@ -64,6 +66,7 @@ export function savedView({ state, actions }: Ctx): HTMLElement {
                 'data-testid': 'unsave',
                 onclick: () => actions.toggleSaved(id),
               },
+              icon('close', 16),
               'Прибрати',
             ),
           ),

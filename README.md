@@ -21,10 +21,11 @@ The UI is in Ukrainian; this document describes the project for developers.
 - **Result:** percentage, status, grade on the exam scale (30–28 excellent, 27–24 good, 23–21 satisfactory, ≤ 20 fail; scaled for other round sizes), mistakes with your and the correct answer, “retry mistakes”.
 - **Hard questions** (answered wrong) are remembered and can be practised from the home screen.
 - **Saved questions:** star ☆ any question; a dedicated screen to review, remove, or practise them.
-- **Excluded questions:** the ⊘ icon next to the star removes a question from all future tests. Another question takes its place, so the round size stays the same; when there is nothing left to substitute, the round shrinks. “Undo” is offered right away; a dedicated screen lists exclusions and restores any or all of them.
+- **Excluded questions:** the ⊘ icon next to the star removes a question from all future tests. Another question takes its place, so the round size stays the same; when there is nothing left to substitute, the round shrinks. A notice offers “Undo exclusion” and a × close button, and dismisses itself after 30 s; a dedicated screen lists exclusions and restores any or all of them.
 - **Version and “What’s new”** in the home-screen footer; the page is built from [`CHANGELOG.md`](CHANGELOG.md).
 - **Unfinished test** is persisted and can be resumed after closing the tab.
-- **Theme switch** on the home screen — system / light / dark; remembered and applied before first paint (no flash).
+- **Theme switch** on the home screen — system / light / dark; remembered and applied before first paint (no flash); switching is animated (sliding thumb and a circular reveal).
+- **My lists:** hard, saved and excluded questions; one “Clear” button (with confirmation) empties all three.
 - **After answering**, the correct option pulses and a wrong pick shakes; the page scrolls so the correct and chosen options are visible (the correct one always fully) and focus moves to the correct option (`Enter` → next). Answers can’t be changed afterwards.
 - **Next question** smoothly scrolls to the question card; the score/progress bar is sticky.
 - **All animations and transitions last ≤ 0.2 s** (enforced by an e2e test); disabled under `prefers-reduced-motion`.

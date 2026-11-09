@@ -2,8 +2,9 @@ import { getQuestion } from '../../data/index.ts';
 import type { Question } from '../../data/types.ts';
 import { KIND_LABEL, TF_PREFIX, type Task } from '../../core/round.ts';
 import { currentResult, currentTask, stats, type TaskResult } from '../../core/session.ts';
-import { excludeButton, questionRef, renderAnswer, starButton } from '../components.ts';
+import { collapse, excludeButton, questionRef, renderAnswer, starButton } from '../components.ts';
 import { cx, h, type Child } from '../dom.ts';
+import { icon } from '../icons.ts';
 import type { Actions, Ctx, UiState } from '../state.ts';
 
 const LETTERS = 'АБВГДЕ';
@@ -36,7 +37,7 @@ export function quizView({ state, actions }: Ctx): HTMLElement {
       h(
         'div',
         { class: 'topbar' },
-        h('button', { type: 'button', class: 'topbar__back', onclick: actions.exit }, '← Меню'),
+        h('button', { type: 'button', class: 'topbar__back', onclick: actions.exit }, icon('back'), 'Меню'),
         h(
           'div',
           { class: 'stats', 'aria-live': 'polite' },
@@ -101,32 +102,55 @@ export function quizView({ state, actions }: Ctx): HTMLElement {
   );
 }
 
-/** Пояснення після виключення: що сталося, де повернути, і «Скасувати». */
+/**
+ * Пояснення після виключення: що сталося, де повернути, «Скасувати виключення» і ×.
+ * Зверху — смужка часу до автозакриття (анімує App, бо екран перемальовується повністю).
+ */
 function excludeNotice(state: UiState, actions: Actions): HTMLElement {
   const n = state.notice!;
   const q = getQuestion(n.qid)!;
-  return h(
-    'div',
-    { class: 'notice', role: 'status', 'data-testid': 'exclude-notice' },
+  const closing = n.leaving;
+  return collapse(
+    !closing,
+    closing || state.toggled === 'notice',
+    { class: 'notice-wrap', 'data-testid': 'exclude-notice-wrap' },
     h(
-      'p',
-      null,
-      h('b', null, `Питання «${questionRef(q)}» виключено.`),
-      ' Воно більше не з’являтиметься в тестах. ',
-      n.replaced
-        ? 'Замість нього додано інше питання — кількість питань не змінилась.'
-        : 'Інших питань для заміни немає, тому питань у тесті стало менше.',
-      ' Повернути його можна в меню «Виключені питання».',
-    ),
-    h(
-      'button',
-      {
-        type: 'button',
-        class: 'btn btn--ghost btn--auto btn--small',
-        'data-testid': 'undo-exclude',
-        onclick: actions.undoExclude,
-      },
-      'Скасувати',
+      'div',
+      { class: 'notice', role: 'status', 'data-testid': 'exclude-notice' },
+      h('div', { class: 'notice__timer', 'aria-hidden': 'true', 'data-testid': 'notice-timer' }),
+      h(
+        'p',
+        null,
+        h('b', null, `Питання «${questionRef(q)}» виключено.`),
+        ' Воно більше не з’являтиметься в тестах. ',
+        n.replaced
+          ? 'Замість нього додано інше питання — кількість питань не змінилась.'
+          : 'Інших питань для заміни немає, тому питань у тесті стало менше.',
+        ' Повернути його можна в меню «Виключені питання».',
+      ),
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'btn btn--secondary btn--auto btn--small notice__undo',
+          'data-testid': 'undo-exclude',
+          onclick: actions.undoExclude,
+        },
+        icon('undo', 16),
+        'Скасувати виключення',
+      ),
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'notice__close',
+          'aria-label': 'Закрити повідомлення',
+          title: 'Закрити повідомлення',
+          'data-testid': 'close-notice',
+          onclick: actions.dismissNotice,
+        },
+        icon('close'),
+      ),
     ),
   );
 }
@@ -146,11 +170,11 @@ function body(task: Task, q: Question, state: UiState, actions: Actions, result:
     case 'card':
       return [
         prompt(q.q),
-        h(
-          'div',
-          { class: cx('reveal', state.revealed && 'is-on'), id: 'card-answer', hidden: !state.revealed },
-          h('div', { class: 'reveal__label' }, 'Відповідь'),
-          renderAnswer(q.a),
+        collapse(
+          state.revealed,
+          state.toggled === 'reveal',
+          { id: 'card-answer' },
+          h('div', { class: 'reveal' }, h('div', { class: 'reveal__label' }, 'Відповідь'), renderAnswer(q.a)),
         ),
         h(
           'button',
@@ -162,6 +186,7 @@ function body(task: Task, q: Question, state: UiState, actions: Actions, result:
             'data-testid': 'flip',
             onclick: actions.flip,
           },
+          icon(state.revealed ? 'eyeOff' : 'eye'),
           state.revealed ? 'Сховати відповідь' : 'Показати відповідь',
         ),
       ];
@@ -338,17 +363,21 @@ function controls(task: Task, state: UiState, actions: Actions, answered: boolea
         h(
           'button',
           { type: 'button', class: 'btn btn--bad', 'data-testid': 'dont-know', onclick: () => actions.know(false) },
+          icon('close'),
           'Не знав',
         ),
         h(
           'button',
           { type: 'button', class: 'btn btn--ok', 'data-testid': 'know', onclick: () => actions.know(true) },
+          icon('check'),
           'Знав',
         ),
       ),
     );
   } else if (answered) {
-    buttons.push(h('button', { type: 'button', class: 'btn', 'data-testid': 'next', onclick: actions.next }, 'Далі'));
+    buttons.push(
+      h('button', { type: 'button', class: 'btn', 'data-testid': 'next', onclick: actions.next }, 'Далі', icon('next')),
+    );
   } else if (task.kind === 'multi') {
     buttons.push(
       h(
@@ -360,6 +389,7 @@ function controls(task: Task, state: UiState, actions: Actions, answered: boolea
           disabled: state.multi.length === 0,
           onclick: actions.submitMulti,
         },
+        icon('submit'),
         'Перевірити',
       ),
     );
@@ -374,6 +404,7 @@ function controls(task: Task, state: UiState, actions: Actions, answered: boolea
           disabled: state.order.length !== task.items.length,
           onclick: actions.submitOrder,
         },
+        icon('submit'),
         'Перевірити',
       ),
     );
@@ -383,7 +414,8 @@ function controls(task: Task, state: UiState, actions: Actions, answered: boolea
       h(
         'button',
         { type: 'button', class: 'btn btn--ghost', 'data-testid': 'skip', onclick: actions.skip },
-        'Пропустити → наступне питання',
+        icon('skip'),
+        'Пропустити — наступне питання',
       ),
     );
   }
@@ -391,6 +423,7 @@ function controls(task: Task, state: UiState, actions: Actions, answered: boolea
     h(
       'button',
       { type: 'button', class: 'btn btn--ghost', 'data-testid': 'finish', onclick: actions.finish },
+      icon('flag'),
       'Завершити тест',
     ),
   );

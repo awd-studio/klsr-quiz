@@ -2,6 +2,7 @@ import type { QuestionId, SetId } from '../data/types.ts';
 import type { Difficulty, Mode } from '../core/round.ts';
 import type { Session } from '../core/session.ts';
 import type { PersistedState, Theme } from '../core/storage.ts';
+import type { IconName } from './icons.ts';
 
 export type Screen = 'home' | 'quiz' | 'result' | 'saved' | 'excluded' | 'changelog';
 
@@ -12,9 +13,19 @@ export interface ExcludeNotice {
   readonly replaced: boolean;
   /** Питання, на якому показується повідомлення (зникає при переході до іншого). */
   readonly shownOn: QuestionId | null;
-  /** Стан тесту до виключення — для «Скасувати». */
+  /** Стан тесту до виключення — для «Скасувати виключення». */
   readonly before: Session;
+  /** Час появи (`Date.now()`), від нього відлічується автозакриття. */
+  readonly shownAt: number;
+  /** Повідомлення зникає (анімація закриття, потім його прибирають). */
+  readonly leaving: boolean;
 }
+
+/**
+ * Що змінилося щойно — для одноразової анімації появи/зникнення блоку.
+ * `{ theme }` — тему змінено, повзунок перемикача їде від попередньої теми.
+ */
+export type Toggled = 'mode' | 'reveal' | 'notice' | { readonly theme: Theme };
 
 export type ModalState =
   | { readonly kind: 'fail' }
@@ -23,6 +34,9 @@ export type ModalState =
       readonly title: string;
       readonly text: string;
       readonly okLabel: string;
+      readonly okIcon: IconName;
+      /** Незворотна дія (очищення) — червоний заголовок і кнопка. */
+      readonly danger: boolean;
       readonly onOk: () => void;
     };
 
@@ -41,6 +55,8 @@ export interface UiState {
   /** Щойно відповіли на поточне завдання: анімувати й показати правильний варіант. */
   readonly justAnswered: boolean;
   readonly notice: ExcludeNotice | null;
+  /** Анімувати появу/зникнення в першому рендері після зміни (як `justAnswered`). */
+  readonly toggled: Toggled | null;
 }
 
 export interface Actions {
@@ -56,7 +72,8 @@ export interface Actions {
   startHard(): void;
   startSaved(): void;
   resume(): void;
-  clearHard(): void;
+  /** Очистити всі списки: складні, збережені й виключені питання. */
+  clearLists(): void;
 
   flip(): void;
   know(known: boolean): void;
@@ -77,6 +94,7 @@ export interface Actions {
 
   exclude(id: QuestionId): void;
   undoExclude(): void;
+  dismissNotice(): void;
   restoreExcluded(id: QuestionId): void;
   restoreAllExcluded(): void;
   openExcluded(): void;

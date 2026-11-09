@@ -20,8 +20,8 @@ import {
   type Session,
   type SessionConfig,
 } from '../core/session.ts';
-import { saveState, type PersistedState, type Prefs, type StorageLike } from '../core/storage.ts';
-import type { Actions, Ctx, UiState } from './state.ts';
+import { saveState, type PersistedState, type Prefs, type StorageLike, type Theme } from '../core/storage.ts';
+import type { Actions, Ctx, ExcludeNotice, UiState } from './state.ts';
 import { homeView } from './views/home.ts';
 import { quizView, handleQuizKey } from './views/quiz.ts';
 import { resultView } from './views/result.ts';
@@ -29,8 +29,9 @@ import { savedView } from './views/saved.ts';
 import { excludedView } from './views/excluded.ts';
 import { changelogView } from './views/changelog.ts';
 import { modal } from './components.ts';
-import { h } from './dom.ts';
-import { revealAnswer, scrollToQuestion } from './scroll.ts';
+import { cx, h } from './dom.ts';
+import { icon, type IconName } from './icons.ts';
+import { MAX_ANIMATION_MS, revealAnswer, scrollToQuestion } from './scroll.ts';
 import { applyTheme } from './theme.ts';
 
 export interface AppOptions {
@@ -43,11 +44,16 @@ export interface AppOptions {
   readonly altShare?: number;
 }
 
+/** Повідомлення про виключене питання зникає саме через 30 с. */
+export const NOTICE_MS = 30_000;
+
 /** Контролер застосунку: стан → рендер; дії змінюють стан і зберігають його. */
 export class App {
   private state: UiState;
   private readonly rng: Rng;
   private lastViewKey = '';
+  private noticeTimer: ReturnType<typeof setTimeout> | undefined;
+  private timerFor: ExcludeNotice | null = null;
   private readonly opts: AppOptions;
   readonly actions: Actions;
 
@@ -64,6 +70,7 @@ export class App {
       modal: null,
       justAnswered: false,
       notice: null,
+      toggled: null,
     };
     this.actions = this.createActions();
     document.addEventListener('keydown', (e) => this.onKey(e));
@@ -105,18 +112,70 @@ export class App {
       revealAnswer(this.opts.root);
     }
     if (m) this.opts.root.querySelector<HTMLElement>('.modal button')?.focus();
+    this.renderCountdown();
+  }
+
+  /**
+   * Смужка часу, що лишився до закриття повідомлення: зменшується справа наліво.
+   * Екран перемальовується повністю, тому анімація щоразу продовжується з того місця,
+   * яке відповідає часу від появи повідомлення.
+   */
+  private renderCountdown(): void {
+    const n = this.state.notice;
+    const bar = this.opts.root.querySelector<HTMLElement>('.notice__timer');
+    if (!n || !bar) return;
+    const elapsed = Math.min(NOTICE_MS, Math.max(0, Date.now() - n.shownAt));
+    bar.style.transform = `scaleX(${1 - elapsed / NOTICE_MS})`;
+    if (n.leaving || typeof bar.animate !== 'function') return;
+    const anim = bar.animate([{ transform: 'scaleX(1)' }, { transform: 'scaleX(0)' }], {
+      duration: NOTICE_MS,
+      easing: 'linear',
+      fill: 'forwards',
+    });
+    anim.currentTime = elapsed;
+  }
+
+  /** Таймер повідомлення: автозакриття через 30 с, після анімації зникнення — прибрати. */
+  private syncNoticeTimer(): void {
+    const n = this.state.notice;
+    if (n === this.timerFor) return;
+    clearTimeout(this.noticeTimer);
+    this.timerFor = n;
+    if (!n) return;
+    if (n.leaving) {
+      this.noticeTimer = setTimeout(() => {
+        if (this.state.notice === n) this.set({ notice: null }, false);
+      }, MAX_ANIMATION_MS);
+    } else {
+      this.noticeTimer = setTimeout(() => this.dismissNotice(), Math.max(0, n.shownAt + NOTICE_MS - Date.now()));
+    }
+  }
+
+  private dismissNotice(): void {
+    const n = this.state.notice;
+    if (n && !n.leaving) this.set({ notice: { ...n, leaving: true } }, false);
+  }
+
+  /**
+   * Повідомлення показується, поки на екрані питання, що стало на місце виключеного;
+   * при переході до іншого питання чи екрана воно зникає разом зі зміною вмісту.
+   */
+  private keepNotice(s: UiState): UiState {
+    const n = s.notice;
+    if (!n) return s;
+    if (s.screen !== 'quiz' || !s.session) return { ...s, notice: null };
+    if (n.leaving) return s;
+    return n.shownOn === (currentTask(s.session)?.qid ?? null) ? s : { ...s, notice: null };
   }
 
   /* ───────────── state helpers ───────────── */
 
   private set(patch: Partial<UiState>, persist = true): void {
-    // Анімація відповіді — лише в першому рендері після неї.
-    const next: UiState = { ...this.state, justAnswered: false, ...patch };
-    // Повідомлення про виключення — лише поки на екрані те саме питання.
-    const shown = next.screen === 'quiz' && next.session ? (currentTask(next.session)?.qid ?? null) : undefined;
-    this.state = next.notice && next.notice.shownOn !== shown ? { ...next, notice: null } : next;
+    // Анімації відповіді й появи/зникнення блоків — лише в першому рендері після зміни.
+    this.state = this.keepNotice({ ...this.state, justAnswered: false, toggled: null, ...patch });
     if (persist) this.persist();
     this.render();
+    this.syncNoticeTimer();
   }
 
   private persist(): void {
@@ -144,8 +203,39 @@ export class App {
 
   private isExcluded = (id: QuestionId): boolean => this.state.data.excluded.includes(id);
 
-  private confirm(title: string, text: string, okLabel: string, onOk: () => void): void {
-    this.set({ modal: { kind: 'confirm', title, text, okLabel, onOk } }, false);
+  private confirm(
+    title: string,
+    text: string,
+    okLabel: string,
+    okIcon: IconName,
+    onOk: () => void,
+    danger = false,
+  ): void {
+    this.set({ modal: { kind: 'confirm', title, text, okLabel, okIcon, danger, onOk } }, false);
+  }
+
+  /**
+   * Зміна теми: нова тема розходиться колом від натиснутої кнопки (View Transitions, 0,2 с),
+   * а повзунок перемикача їде від попередньої теми. Без підтримки API або при
+   * «зменшеному русі» тема змінюється одразу, повзунок — без кола.
+   */
+  private changeTheme(theme: Theme): void {
+    const { data } = this.state;
+    const from = data.prefs.theme;
+    if (theme === from) return;
+    const apply = () => this.set({ data: { ...data, prefs: { ...data.prefs, theme } }, toggled: { theme: from } });
+    const btn = this.opts.root.querySelector(`[data-theme-value="${theme}"]`);
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (!btn || reduce || typeof document.startViewTransition !== 'function') return apply();
+    const r = btn.getBoundingClientRect();
+    const x = r.left + r.width / 2;
+    const y = r.top + r.height / 2;
+    const radius = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+    const root = document.documentElement.style;
+    root.setProperty('--reveal-x', `${x}px`);
+    root.setProperty('--reveal-y', `${y}px`);
+    root.setProperty('--reveal-r', `${radius}px`);
+    document.startViewTransition(apply);
   }
 
   /* ───────────── sessions ───────────── */
@@ -203,7 +293,9 @@ export class App {
   /** Почати новий тест, попередивши про втрату незавершеного. */
   private startGuarded(config: SessionConfig): void {
     if (this.state.data.session) {
-      this.confirm('Почати новий тест?', 'Незавершений тест буде втрачено.', 'Почати', () => this.launch(config));
+      this.confirm('Почати новий тест?', 'Незавершений тест буде втрачено.', 'Почати', 'play', () =>
+        this.launch(config),
+      );
     } else {
       this.launch(config);
     }
@@ -271,16 +363,17 @@ export class App {
       revealed: false,
       multi: [],
       order: [],
-      notice: { qid: id, replaced: !!replacement, shownOn, before: s },
+      notice: { qid: id, replaced: !!replacement, shownOn, before: s, shownAt: Date.now(), leaving: false },
+      toggled: 'notice',
     });
   }
 
   private undoExclude(): void {
     const n = this.state.notice;
-    if (!n || this.state.screen !== 'quiz') return;
+    if (!n || n.leaving || this.state.screen !== 'quiz') return;
     const excluded = this.state.data.excluded.filter((x) => x !== n.qid);
-    this.state = { ...this.state, data: { ...this.state.data, excluded }, notice: null };
-    this.set({ session: n.before, revealed: false, multi: [], order: [] });
+    this.state = { ...this.state, data: { ...this.state.data, excluded } };
+    this.set({ session: n.before, revealed: false, multi: [], order: [], notice: { ...n, leaving: true } });
   }
 
   private restore(ids: readonly QuestionId[]): void {
@@ -336,11 +429,14 @@ export class App {
   private createActions(): Actions {
     return {
       setSet: (setId) => this.setPrefs({ setId }),
-      setMode: (mode) => this.setPrefs({ mode }),
+      setMode: (mode) => {
+        const { data } = this.state;
+        if (mode !== data.prefs.mode) this.set({ data: { ...data, prefs: { ...data.prefs, mode } }, toggled: 'mode' });
+      },
       setDifficulty: (difficulty) => this.setPrefs({ difficulty }),
       setCount: (count) => this.setCount(count),
       setLimit: (limit) => this.setPrefs({ limit }),
-      setTheme: (theme) => this.setPrefs({ theme }),
+      setTheme: (theme) => this.changeTheme(theme),
       presetExam: () => {
         this.setCount(30);
         this.setPrefs({ limit: 10 });
@@ -367,15 +463,22 @@ export class App {
             modal: null,
           });
       },
-      clearHard: () =>
+      clearLists: () => {
+        const { hard, saved, excluded } = this.state.data;
+        if (!hard.length && !saved.length && !excluded.length) return;
         this.confirm(
-          'Очистити складні питання?',
-          'Список питань, з якими були труднощі, буде очищено.',
+          'Очистити всі списки?',
+          `Буде очищено (в усіх модулях): складні питання — ${hard.length}, збережені — ${saved.length}, ` +
+            `виключені — ${excluded.length}. Виключені питання знову з’являтимуться в тестах. ` +
+            'Незавершений тест і налаштування збережуться. Цю дію не можна скасувати.',
           'Очистити',
-          () => this.set({ data: this.setLists([], this.state.data.saved), modal: null }),
-        ),
+          'trash',
+          () => this.set({ data: { ...this.state.data, hard: [], saved: [], excluded: [] }, modal: null }),
+          true,
+        );
+      },
 
-      flip: () => this.set({ revealed: !this.state.revealed }, false),
+      flip: () => this.set({ revealed: !this.state.revealed, toggled: 'reveal' }, false),
       know: (known) => this.answer({ kind: 'card', known }),
       choose: (index) => this.answer({ kind: 'choice', index }),
       answerTf: (value) => this.answer({ kind: 'tf', value }),
@@ -407,7 +510,7 @@ export class App {
         if (s) this.set({ session: this.freshen(skip(s)), revealed: false, multi: [], order: [] });
       },
       finish: () =>
-        this.confirm('Завершити тест?', 'Питання без відповіді не будуть зараховані.', 'Завершити', () =>
+        this.confirm('Завершити тест?', 'Питання без відповіді не будуть зараховані.', 'Завершити', 'flag', () =>
           this.toResult(finishEarly(this.state.session!)),
         ),
       // Незавершений тест лишається збереженим — його можна продовжити з головного екрана.
@@ -422,12 +525,14 @@ export class App {
 
       exclude: (id) => this.excludeQuestion(id),
       undoExclude: () => this.undoExclude(),
+      dismissNotice: () => this.dismissNotice(),
       restoreExcluded: (id) => this.restore([id]),
       restoreAllExcluded: () =>
         this.confirm(
           'Повернути всі виключені питання?',
           'Усі виключені питання знову з’являтимуться в тестах.',
           'Повернути всі',
+          'undo',
           () => this.restore(this.state.data.excluded),
         ),
       openExcluded: () => this.set({ screen: 'excluded', modal: null }),
@@ -480,17 +585,33 @@ export class App {
           h(
             'button',
             { type: 'button', class: 'btn btn--secondary', onclick: this.actions.failRestart },
+            icon('again'),
             'Почати заново',
           ),
-          h('button', { type: 'button', class: 'btn', onclick: this.actions.failContinue }, 'Продовжити'),
+          h('button', { type: 'button', class: 'btn', onclick: this.actions.failContinue }, icon('next'), 'Продовжити'),
         ],
         'danger',
       );
     }
-    return modal(m.title, m.text, [
-      h('button', { type: 'button', class: 'btn btn--secondary', onclick: this.actions.closeModal }, 'Скасувати'),
-      h('button', { type: 'button', class: 'btn', onclick: () => m.onOk() }, m.okLabel),
-    ]);
+    return modal(
+      m.title,
+      m.text,
+      [
+        h(
+          'button',
+          { type: 'button', class: 'btn btn--secondary', onclick: this.actions.closeModal },
+          icon('close'),
+          'Скасувати',
+        ),
+        h(
+          'button',
+          { type: 'button', class: cx('btn', m.danger && 'btn--danger'), onclick: () => m.onOk() },
+          icon(m.okIcon),
+          m.okLabel,
+        ),
+      ],
+      m.danger ? 'danger' : 'neutral',
+    );
   }
 
   private onKey(e: KeyboardEvent): void {

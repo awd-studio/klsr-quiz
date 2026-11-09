@@ -1,5 +1,6 @@
 import { inlineCode, parseChangelog } from '../../core/changelog.ts';
 import { h } from '../dom.ts';
+import { icon } from '../icons.ts';
 import type { Ctx } from '../state.ts';
 import { CHANGELOG, VERSION } from '../version.ts';
 
@@ -17,7 +18,7 @@ export function changelogView({ actions }: Ctx): HTMLElement {
     h(
       'div',
       { class: 'topbar' },
-      h('button', { type: 'button', class: 'topbar__back', onclick: actions.home }, '← Меню'),
+      h('button', { type: 'button', class: 'topbar__back', onclick: actions.home }, icon('back'), 'Меню'),
     ),
     h('h1', { tabindex: '-1', 'data-autofocus': true }, 'Що нового'),
     h('p', { class: 'sub' }, `Поточна версія — ${VERSION}.`),

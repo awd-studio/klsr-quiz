@@ -4,6 +4,7 @@ import { DIFFICULTY_LABEL, TF_PREFIX, type Task } from '../../core/round.ts';
 import { stats, wrongTaskIndices, type TaskResult } from '../../core/session.ts';
 import { questionRef, renderAnswer, starButton } from '../components.ts';
 import { cx, h, type Child } from '../dom.ts';
+import { icon } from '../icons.ts';
 import type { Ctx } from '../state.ts';
 
 const SOURCE_LABEL = {
@@ -69,17 +70,24 @@ export function resultView({ state, actions }: Ctx): HTMLElement {
     h(
       'div',
       { class: 'btns' },
-      h('button', { type: 'button', class: 'btn', 'data-testid': 'again', onclick: actions.again }, 'Пройти знову'),
+      h(
+        'button',
+        { type: 'button', class: 'btn', 'data-testid': 'again', onclick: actions.again },
+        icon('again'),
+        'Пройти знову',
+      ),
       wrong.length
         ? h(
             'button',
             { type: 'button', class: 'btn btn--secondary', 'data-testid': 'retry', onclick: actions.retryMistakes },
+            icon('retry'),
             `Повторити помилки (${wrong.length})`,
           )
         : null,
       h(
         'button',
         { type: 'button', class: 'btn btn--ghost', 'data-testid': 'home', onclick: actions.home },
+        icon('home'),
         'Головне меню',
       ),
     ),

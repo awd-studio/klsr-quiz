@@ -217,7 +217,7 @@ test.describe('вибір варіанту', () => {
     expect(new Set(tasks.map((t) => t.qid)).size).toBe(20);
     expect(tasks.filter((t) => !(t.kind === 'choice' && t.source === 'base'))).toHaveLength(2);
 
-    await page.getByRole('button', { name: '← Меню' }).click();
+    await page.getByRole('button', { name: 'Меню', exact: true }).click();
     await page.locator('[data-value=all]').click();
     await page.getByTestId('start').click();
     await page.getByRole('dialog').getByRole('button', { name: 'Почати' }).click(); // підтвердження: є незавершений тест
@@ -236,8 +236,8 @@ test.describe('збережені питання', () => {
     const qid = (await currentTask(page)).qid;
     await page.getByRole('button', { name: 'Зберегти питання' }).click();
     await expect(page.getByRole('button', { name: 'Прибрати зі збережених' })).toBeVisible();
-    await page.getByRole('button', { name: '← Меню' }).click();
-    await expect(page.getByTestId('saved')).toHaveText('☆ Збережені питання (1)');
+    await page.getByRole('button', { name: 'Меню', exact: true }).click();
+    await expect(page.getByTestId('saved')).toHaveText('Збережені питання (1)');
 
     await page.getByTestId('saved').click();
     await expect(page.locator(`[data-qid="${qid}"]`)).toBeVisible();
@@ -249,7 +249,7 @@ test.describe('збережені питання', () => {
     await expect(page.getByTestId('progress')).toHaveText('Відповідей: 0 / 1');
     expect((await currentTask(page)).qid).toBe(qid);
 
-    await page.getByRole('button', { name: '← Меню' }).click();
+    await page.getByRole('button', { name: 'Меню', exact: true }).click();
     await page.getByTestId('saved').click();
     await page.getByTestId('unsave').click();
     await expect(page.getByText('Поки що немає збережених питань.')).toBeVisible();
@@ -290,20 +290,20 @@ test.describe('тема оформлення', () => {
 
     await page.locator('[data-theme-value=light]').click();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
-    expect(await bg(page)).toBe('rgb(244, 245, 247)');
+    await expect.poll(() => bg(page)).toBe('rgb(244, 245, 247)');
 
     await page.reload();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
     await expect(page.locator('[data-theme-value=light]')).toHaveAttribute('aria-checked', 'true');
-    expect(await bg(page)).toBe('rgb(244, 245, 247)');
+    await expect.poll(() => bg(page)).toBe('rgb(244, 245, 247)');
 
     await page.emulateMedia({ colorScheme: 'light' });
     await page.locator('[data-theme-value=dark]').click();
-    expect(await bg(page)).toBe('rgb(18, 20, 24)');
+    await expect.poll(() => bg(page)).toBe('rgb(18, 20, 24)');
 
     await page.locator('[data-theme-value=system]').click();
     await expect(page.locator('html')).not.toHaveAttribute('data-theme', /.+/);
-    expect(await bg(page)).toBe('rgb(244, 245, 247)');
+    await expect.poll(() => bg(page)).toBe('rgb(244, 245, 247)');
   });
 });
 

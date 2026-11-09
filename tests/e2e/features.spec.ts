@@ -81,9 +81,9 @@ test.describe('виключення питань', () => {
     await page.getByTestId('exclude').click();
     const second = (await currentTask(page)).qid;
     await page.getByTestId('exclude').click();
-    await page.getByRole('button', { name: '← Меню' }).click();
+    await page.getByRole('button', { name: 'Меню', exact: true }).click();
 
-    await expect(page.getByTestId('excluded')).toHaveText('⊘ Виключені питання (2)');
+    await expect(page.getByTestId('excluded')).toHaveText('Виключені питання (2)');
     await expect(page.getByTestId('excluded-note')).toHaveText(' · виключено 2');
     await expect(page.locator('#count')).toHaveAttribute('max', '98');
 
@@ -96,7 +96,7 @@ test.describe('виключення питань', () => {
     expect(ids).toHaveLength(98);
     expect(ids).not.toContain(first);
     expect(ids).not.toContain(second);
-    await page.getByRole('button', { name: '← Меню' }).click();
+    await page.getByRole('button', { name: 'Меню', exact: true }).click();
 
     await page.getByTestId('excluded').click();
     await expect(page.getByRole('heading', { name: 'Виключені питання (2)' })).toBeVisible();
@@ -109,8 +109,8 @@ test.describe('виключення питань', () => {
     await page.getByRole('dialog').getByRole('button', { name: 'Повернути всі' }).click();
     await expect(page.getByTestId('excluded-empty')).toBeVisible();
     expect((await persisted(page)).excluded).toEqual([]);
-    await page.getByRole('button', { name: '← Меню' }).click();
-    await expect(page.getByTestId('excluded')).toHaveText('⊘ Виключені питання (0)');
+    await page.getByRole('button', { name: 'Меню', exact: true }).click();
+    await expect(page.getByTestId('excluded')).toHaveText('Виключені питання (0)');
   });
 
   test('у тесті зі збережених: питань стає менше, останнє — повернення в меню', async ({ page }) => {
@@ -120,7 +120,7 @@ test.describe('виключення питань', () => {
     await page.getByRole('button', { name: 'Зберегти питання' }).click();
     await page.getByTestId('know').click();
     await page.getByRole('button', { name: 'Зберегти питання' }).click();
-    await page.getByRole('button', { name: '← Меню' }).click();
+    await page.getByRole('button', { name: 'Меню', exact: true }).click();
     await page.getByTestId('saved').click();
     await page.getByTestId('start-saved').click();
     await page.getByRole('dialog').getByRole('button', { name: 'Почати' }).click();
@@ -137,10 +137,151 @@ test.describe('виключення питань', () => {
   });
 });
 
+/** Анімація з CSS-класу елемента (стабільно, навіть якщо вона вже завершилась). */
+const cssAnimation = (page: Page, selector: string) =>
+  page.locator(selector).evaluate((el) => {
+    const st = getComputedStyle(el);
+    return { name: st.animationName, duration: st.animationDuration };
+  });
+
+/** Анімації Web Animations API на елементі (смужка часу). */
+const scriptAnimations = (page: Page, selector: string) =>
+  page.locator(selector).evaluate((el) =>
+    el.getAnimations().map((a) => {
+      const t = a.effect!.getComputedTiming();
+      return { duration: Number(t.duration), easing: String(t.easing) };
+    }),
+  );
+
+test.describe('повідомлення про виключення: таймер, ×, анімації', () => {
+  test('з’являється за 0,2 с; смужка 30 с зменшується справа наліво; × закриває за 0,2 с', async ({ page }) => {
+    await openApp(page);
+    await setCount(page, 3);
+    await page.getByTestId('start').click();
+    await page.getByTestId('exclude').click();
+
+    const wrap = page.getByTestId('exclude-notice-wrap');
+    await expect(wrap).toHaveClass(/is-opening/);
+    expect(await cssAnimation(page, '[data-testid=exclude-notice-wrap]')).toEqual({
+      name: 'collapse-open',
+      duration: '0.2s',
+    });
+
+    // Смужка — вгорі повідомлення, на всю ширину; анімація 30 с, рівномірна, справа наліво.
+    const notice = (await page.getByTestId('exclude-notice').boundingBox())!;
+    const bar = page.getByTestId('notice-timer');
+    const barBox = (await bar.boundingBox())!;
+    expect(Math.abs(barBox.y - notice.y)).toBeLessThanOrEqual(2);
+    expect(barBox.height).toBeLessThanOrEqual(4);
+    expect(await scriptAnimations(page, '[data-testid=notice-timer]')).toEqual([
+      { duration: 30_000, easing: 'linear' },
+    ]);
+    expect(await bar.evaluate((el) => getComputedStyle(el).transformOrigin.startsWith('0px'))).toBe(true);
+    const scale = () => bar.evaluate((el) => new DOMMatrix(getComputedStyle(el).transform).a);
+    const s1 = await scale();
+    await page.waitForTimeout(600);
+    const s2 = await scale();
+    expect(s2).toBeLessThan(s1);
+    expect(s2).toBeGreaterThan(0.9);
+
+    // Перемальовування (позначка зірочкою) не перезапускає відлік.
+    await page.getByRole('button', { name: 'Зберегти питання' }).click();
+    expect(await scale()).toBeLessThanOrEqual(s2);
+
+    // × — справа зверху.
+    const close = page.getByTestId('close-notice');
+    await expect(close).toHaveAttribute('aria-label', 'Закрити повідомлення');
+    const c = (await close.boundingBox())!;
+    expect(notice.x + notice.width - (c.x + c.width)).toBeLessThanOrEqual(12);
+    expect(c.y - notice.y).toBeLessThanOrEqual(12);
+    const qid = (await currentTask(page)).qid;
+    await close.click();
+    await expect(wrap).toHaveClass(/is-closing/);
+    expect(await cssAnimation(page, '[data-testid=exclude-notice-wrap]')).toEqual({
+      name: 'collapse-close',
+      duration: '0.2s',
+    });
+    await expect(wrap).toHaveCount(0);
+    // Закриття не скасовує виключення і не змінює питання.
+    expect((await currentTask(page)).qid).toBe(qid);
+    expect((await persisted(page)).excluded).toHaveLength(1);
+  });
+
+  test('закривається само через 30 секунд', async ({ page }) => {
+    await page.clock.install();
+    await openApp(page);
+    await setCount(page, 3);
+    await page.getByTestId('start').click();
+    await page.getByTestId('exclude').click();
+    await expect(page.getByTestId('exclude-notice')).toBeVisible();
+    await page.clock.fastForward(29_000);
+    await expect(page.getByTestId('exclude-notice-wrap')).not.toHaveClass(/is-closing/);
+    await expect(page.getByTestId('exclude-notice')).toBeVisible();
+    await page.clock.fastForward(1_100);
+    await expect(page.getByTestId('exclude-notice-wrap')).toHaveCount(0);
+    expect((await persisted(page)).excluded).toHaveLength(1);
+  });
+
+  test('«Скасувати виключення» — кнопка на повідомленні; повідомлення плавно зникає', async ({ page }) => {
+    await openApp(page);
+    await setCount(page, 3);
+    await page.getByTestId('start').click();
+    const before = (await currentTask(page)).qid;
+    await page.getByTestId('exclude').click();
+    const undo = page.getByTestId('exclude-notice').getByRole('button', { name: 'Скасувати виключення' });
+    await expect(undo).toBeVisible();
+    await undo.click();
+    await expect(page.getByTestId('exclude-notice-wrap')).toHaveClass(/is-closing/);
+    expect((await currentTask(page)).qid).toBe(before);
+    await expect(page.getByTestId('exclude-notice-wrap')).toHaveCount(0);
+    expect((await persisted(page)).excluded).toEqual([]);
+  });
+});
+
+test.describe('плавна поява і приховування блоків (0,2 с)', () => {
+  test('налаштування складності з’являється і зникає при зміні режиму', async ({ page }) => {
+    await openApp(page);
+    const block = page.getByTestId('choice-settings');
+    await expect(block).toBeHidden();
+    await page.locator('[data-value=choice]').click();
+    await expect(block).toHaveClass(/is-opening/);
+    expect(await cssAnimation(page, '[data-testid=choice-settings]')).toEqual({
+      name: 'collapse-open',
+      duration: '0.2s',
+    });
+    await expect(block).toBeVisible();
+    await page.locator('[data-value=cards]').click();
+    await expect(block).toHaveClass(/is-closing/);
+    expect(await cssAnimation(page, '[data-testid=choice-settings]')).toEqual({
+      name: 'collapse-close',
+      duration: '0.2s',
+    });
+    await expect(block).toBeHidden();
+    // Приховане налаштування недоступне з клавіатури.
+    await expect(page.locator('[data-value=easy]')).toBeHidden();
+    expect(await block.evaluate((el) => (el as HTMLElement).inert)).toBe(true);
+  });
+
+  test('відповідь на картці розгортається і згортається', async ({ page }) => {
+    await openApp(page);
+    await page.getByTestId('start').click();
+    const answerBlock = page.locator('#card-answer');
+    await expect(answerBlock).toBeHidden();
+    await page.getByTestId('flip').click();
+    await expect(answerBlock).toHaveClass(/is-opening/);
+    expect(await cssAnimation(page, '#card-answer')).toEqual({ name: 'collapse-open', duration: '0.2s' });
+    await expect(answerBlock).toBeVisible();
+    await page.getByTestId('flip').click();
+    await expect(answerBlock).toHaveClass(/is-closing/);
+    expect(await cssAnimation(page, '#card-answer')).toEqual({ name: 'collapse-close', duration: '0.2s' });
+    await expect(answerBlock).toBeHidden();
+  });
+});
+
 test.describe('складність варіантів', () => {
   test('налаштування лише в режимі вибору; за замовчуванням — складні; запам’ятовується', async ({ page }) => {
     await openApp(page);
-    await expect(page.locator('[data-value=easy]')).toHaveCount(0);
+    await expect(page.locator('[data-value=easy]')).toBeHidden();
     await page.locator('[data-value=choice]').click();
     await expect(page.locator('[data-value=hard]')).toHaveAttribute('aria-checked', 'true');
     await expect(page.getByTestId('difficulty-hint')).toContainText('як на заліку');
@@ -212,7 +353,7 @@ test.describe('версія і «Що нового»', () => {
     await expect(latest).toContainText('поточна');
     await expect(latest.locator('li').first()).toBeVisible();
     expect(await page.getByTestId('release').count()).toBeGreaterThanOrEqual(5);
-    await page.getByRole('button', { name: '← Меню' }).click();
+    await page.getByRole('button', { name: 'Меню', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'КЛСР — тренажер' })).toBeVisible();
   });
 });
@@ -268,10 +409,197 @@ test.describe('вигляд у світлій і темній темі', () => {
       await page.getByTestId('home').click();
       await page.getByTestId('excluded').click();
       await check('excluded');
-      await page.getByRole('button', { name: '← Меню' }).click();
+      await page.getByRole('button', { name: 'Меню', exact: true }).click();
       await page.getByTestId('changelog').click();
       await check('changelog');
       expect(errors).toEqual([]);
     });
   }
+});
+
+test.describe('перемикач теми: анімація', () => {
+  /** Рахує виклики View Transitions API (кругова зміна теми). */
+  const countViewTransitions = (page: Page) =>
+    page.addInitScript(() => {
+      const w = window as unknown as { __vt: number };
+      w.__vt = 0;
+      const d = document as unknown as { startViewTransition?: (cb: () => void) => unknown };
+      const orig = d.startViewTransition?.bind(document);
+      if (orig)
+        d.startViewTransition = (cb: () => void) => {
+          w.__vt++;
+          return orig(cb);
+        };
+    });
+  const vtCalls = (page: Page) => page.evaluate(() => (window as unknown as { __vt: number }).__vt);
+
+  test('повзунок їде до вибраної теми, значок обертається, тема розходиться колом — 0,2 с', async ({ page }) => {
+    await countViewTransitions(page);
+    await page.emulateMedia({ colorScheme: 'light' });
+    await openApp(page);
+    const thumb = page.locator('.theme__thumb');
+    const at = async (value: string) => {
+      const [t, b] = await Promise.all([
+        thumb.boundingBox(),
+        page.locator(`[data-theme-value=${value}]`).boundingBox(),
+      ]);
+      return Math.abs(t!.x - b!.x) <= 1 && Math.abs(t!.y - b!.y) <= 1;
+    };
+    await expect.poll(() => at('system')).toBe(true);
+
+    await page.locator('[data-theme-value=dark]').click();
+    await expect(page.locator('.theme')).toHaveClass(/is-moving/);
+    expect(await cssAnimation(page, '.theme__thumb')).toEqual({ name: 'theme-thumb', duration: '0.2s' });
+    expect(await cssAnimation(page, '.theme__btn.is-on .icon')).toEqual({ name: 'theme-icon', duration: '0.2s' });
+    await expect.poll(() => at('dark')).toBe(true);
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    expect(await vtCalls(page)).toBe(1);
+
+    // Кругове розкриття нової теми описане в CSS і триває 0,2 с.
+    const reveal = await page.evaluate(() => {
+      for (const sheet of Array.from(document.styleSheets))
+        for (const r of Array.from(sheet.cssRules)) {
+          const rule = r as CSSStyleRule;
+          if (rule.selectorText === '::view-transition-new(root)' && rule.style.animationName)
+            return `${rule.style.animationName} ${rule.style.animationDuration}`;
+        }
+      return null;
+    });
+    expect(reveal).toBe('theme-reveal 0.2s');
+
+    // Повторне натискання на активну тему нічого не змінює.
+    await page.locator('[data-theme-value=dark]').click();
+    expect(await vtCalls(page)).toBe(1);
+
+    // Інший екран і повернення — без анімації повзунка.
+    await page.getByTestId('changelog').click();
+    await page.getByRole('button', { name: 'Меню', exact: true }).click();
+    await expect(page.locator('.theme')).not.toHaveClass(/is-moving/);
+    await expect.poll(() => at('dark')).toBe(true);
+  });
+
+  test('при «зменшеному русі» тема змінюється одразу, без кола', async ({ page }) => {
+    await countViewTransitions(page);
+    await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' });
+    await openApp(page);
+    await page.locator('[data-theme-value=dark]').click();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe('rgb(18, 20, 24)');
+    expect(await vtCalls(page)).toBe(0);
+  });
+});
+
+test.describe('очищення списків', () => {
+  const lists = (page: Page) =>
+    page.evaluate(() => {
+      const d = JSON.parse(localStorage.getItem('klsr-quiz:v2') ?? '{}') as Record<string, unknown>;
+      return { hard: d.hard, saved: d.saved, excluded: d.excluded, session: d.session !== null };
+    });
+
+  test('«Очистити» в «Мої списки»: підтвердження, очищує складні, збережені й виключені', async ({ page }) => {
+    await openApp(page);
+    const clear = page.locator('.lists').getByTestId('clear-lists');
+    await expect(clear).toBeVisible();
+    await expect(clear).toBeDisabled();
+    await expect(clear).toHaveAttribute('title', 'Очистити складні, збережені й виключені питання');
+
+    await setCount(page, 3);
+    await page.getByTestId('start').click();
+    await page.getByRole('button', { name: 'Зберегти питання' }).click();
+    await page.getByTestId('dont-know').click();
+    await page.getByTestId('exclude').click();
+    await page.getByRole('button', { name: 'Меню', exact: true }).click();
+
+    await expect(page.getByTestId('hard')).toHaveText('Складні питання (1)');
+    await expect(page.getByTestId('saved')).toHaveText('Збережені питання (1)');
+    await expect(page.getByTestId('excluded')).toHaveText('Виключені питання (1)');
+    await expect(clear).toBeEnabled();
+
+    // «Скасувати» в діалозі нічого не змінює.
+    await clear.click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.locator('.modal__title')).toHaveText('Очистити всі списки?');
+    await expect(dialog.locator('.modal__title')).toHaveClass(/is-danger/);
+    await expect(dialog).toContainText('складні питання — 1, збережені — 1, виключені — 1');
+    await dialog.getByRole('button', { name: 'Скасувати' }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByTestId('hard')).toHaveText('Складні питання (1)');
+
+    await clear.click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Очистити' }).click();
+    await expect(page.getByTestId('hard')).toHaveText('Складні питання (0)');
+    await expect(page.getByTestId('saved')).toHaveText('Збережені питання (0)');
+    await expect(page.getByTestId('excluded')).toHaveText('Виключені питання (0)');
+    await expect(clear).toBeDisabled();
+    // Незавершений тест лишається.
+    await expect(page.getByTestId('resume')).toBeVisible();
+    expect(await lists(page)).toEqual({ hard: [], saved: [], excluded: [], session: true });
+    await page.reload();
+    await expect(page.getByTestId('hard')).toHaveText('Складні питання (0)');
+  });
+});
+
+test.describe('кнопки: значки й підказки', () => {
+  /**
+   * Кожна видима текстова кнопка має значок; кожна кнопка-значок — `title` і `aria-label`.
+   * Варіанти відповіді (.opts, .order) — це зміст питання, а не дії, тому без значків.
+   */
+  const audit = (page: Page, where: string) =>
+    page
+      .evaluate(() => {
+        const problems: string[] = [];
+        for (const el of Array.from(document.querySelectorAll<HTMLElement>('button, a.link'))) {
+          if (!el.checkVisibility({ visibilityProperty: true }) || el.closest('.opts, .order')) continue;
+          const text = el.textContent!.trim();
+          if (text) {
+            if (!el.querySelector('svg.icon')) problems.push(`без значка: «${text}»`);
+          } else if (!el.title || !el.getAttribute('aria-label')) {
+            problems.push(`без підказки: ${el.outerHTML.slice(0, 80)}`);
+          }
+        }
+        return problems;
+      })
+      .then((p) => expect(p, where).toEqual([]));
+
+  test('на всіх екранах і в діалогах', async ({ page }) => {
+    await openApp(page);
+    await page.locator('[data-value=choice]').click();
+    await audit(page, 'home');
+    await setCount(page, 3);
+    await page.getByTestId('start').click();
+    await audit(page, 'quiz');
+    await page.getByTestId('exclude').click();
+    await audit(page, 'quiz + notice');
+    await page.getByTestId('finish').click();
+    await audit(page, 'finish dialog');
+    await page.getByRole('dialog').getByRole('button', { name: 'Скасувати' }).click();
+    await answer(page, false);
+    await answer(page, true);
+    await answer(page, true);
+    await page.locator('.rlist__item .star').first().click();
+    await audit(page, 'result');
+
+    await page.getByTestId('home').click();
+    await page.getByTestId('saved').click();
+    await audit(page, 'saved');
+    await page.getByRole('button', { name: 'Меню', exact: true }).click();
+    await page.getByTestId('excluded').click();
+    await audit(page, 'excluded');
+    await page.getByTestId('restore-all').click();
+    await audit(page, 'restore dialog');
+    await page.getByRole('dialog').getByRole('button', { name: 'Скасувати' }).click();
+    await page.getByRole('button', { name: 'Меню', exact: true }).click();
+    await page.getByTestId('changelog').click();
+    await audit(page, 'changelog');
+    await page.getByRole('button', { name: 'Меню', exact: true }).click();
+    await page.getByTestId('clear-lists').click();
+    await audit(page, 'clear dialog');
+    await page.getByRole('dialog').getByRole('button', { name: 'Скасувати' }).click();
+
+    await page.locator('[data-value=cards]').click();
+    await page.getByTestId('start').click();
+    await audit(page, 'cards');
+    await page.getByTestId('flip').click();
+    await audit(page, 'cards revealed');
+  });
 });

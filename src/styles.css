@@ -16,6 +16,7 @@
   --shadow: 0 2px 10px rgba(20, 25, 40, 0.07);
   --radius: 14px;
   --ok-ring: rgba(29, 138, 76, 0.35);
+  --on-status: #ffffff;
   color-scheme: light;
 }
 
@@ -38,6 +39,7 @@
   --shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
   color-scheme: dark;
   --ok-ring: rgba(76, 194, 126, 0.45);
+  --on-status: #10141a;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -59,6 +61,7 @@
     --shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
     color-scheme: dark;
     --ok-ring: rgba(76, 194, 126, 0.45);
+    --on-status: #10141a;
   }
 }
 
@@ -173,8 +176,19 @@ h2:focus {
 }
 
 .seg__btn b {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 15px;
+}
+
+.seg__btn .icon {
+  color: var(--muted);
+  transition: color 0.15s;
+}
+
+.seg__btn.is-on .icon {
+  color: var(--accent);
 }
 
 .seg__btn span {
@@ -224,6 +238,10 @@ h2:focus {
 }
 
 .num button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
   width: 38px;
   height: 38px;
   border-radius: 9px;
@@ -250,8 +268,13 @@ h2:focus {
 
 /* ───────── Buttons ───────── */
 
+/* Значок перед текстом; кнопка лишається на всю ширину, вміст — по центру. */
 .btn {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
   width: 100%;
   min-height: 48px;
   padding: 12px 14px;
@@ -279,12 +302,32 @@ h2:focus {
 
 .btn--ok {
   background: var(--ok);
-  color: #fff;
+  color: var(--on-status);
 }
 
-.btn--bad {
+.btn--bad,
+.btn--danger {
   background: var(--bad);
-  color: #fff;
+  color: var(--on-status);
+}
+
+/* Незворотна дія поза діалогом: стримано, але помітно червоним. */
+.btn--danger-ghost {
+  background: transparent;
+  color: var(--bad);
+  border: 1px solid var(--bad);
+  font-weight: 600;
+  transition: background-color 0.15s;
+}
+
+.btn--danger-ghost:not(:disabled):hover,
+.btn--danger-ghost:focus-visible {
+  background: var(--bad-bg);
+}
+
+.icon {
+  flex: 0 0 auto;
+  display: block;
 }
 
 .btn--auto {
@@ -325,6 +368,9 @@ h2:focus {
 }
 
 .link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   background: none;
   border: 0;
   padding: 10px 0 0;
@@ -354,6 +400,28 @@ h2:focus {
 .link--inline {
   padding: 0;
   font-size: inherit;
+}
+
+/* Мої списки: три кнопки-списки, під ними — пояснення й «Очистити» справа. */
+.lists__btns {
+  margin-bottom: 0;
+}
+
+.lists__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.lists__foot .hint {
+  margin: 0;
+  flex: 1 1 200px;
+  font-size: 13px;
 }
 
 /* ───────── Що нового ───────── */
@@ -414,6 +482,9 @@ code {
 }
 
 .topbar__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   background: none;
   border: 0;
   color: var(--muted);
@@ -570,8 +641,10 @@ code {
   border-color: var(--bad);
 }
 
-/* Повідомлення про виключене питання. */
+/* Повідомлення про виключене питання: смужка часу зверху, × справа зверху. */
 .notice {
+  position: relative;
+  overflow: hidden;
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
@@ -582,13 +655,12 @@ code {
   border: 1px solid var(--line);
   border-left: 4px solid var(--warn);
   border-radius: 10px;
-  padding: 10px 12px;
+  padding: 14px 40px 10px 12px;
   font-size: 14px;
   margin-bottom: 12px;
-  animation: fade-in 0.15s ease-out;
 }
 
-/* На вузьких екранах кнопка «Скасувати» переноситься під текст. */
+/* На вузьких екранах кнопка «Скасувати виключення» переноситься під текст. */
 .notice p {
   margin: 0;
   flex: 1 1 240px;
@@ -597,6 +669,101 @@ code {
 
 .notice .btn {
   flex: 0 0 auto;
+}
+
+/* Час до автозакриття: смужка зменшується справа наліво (анімацію задає App). */
+.notice__timer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--warn);
+  transform-origin: left center;
+}
+
+.notice__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    background-color 0.15s;
+}
+
+.notice__close:hover,
+.notice__close:focus-visible {
+  color: var(--text);
+  background: var(--card);
+}
+
+/* ───────── Плавне розгортання / згортання блоків (0,2 с) ───────── */
+
+.collapse {
+  display: grid;
+  grid-template-rows: 1fr;
+}
+
+/* flow-root: відступи дочірніх елементів лишаються всередині і згортаються разом із блоком. */
+.collapse__inner {
+  min-height: 0;
+  display: flow-root;
+}
+
+.collapse.is-closed {
+  grid-template-rows: 0fr;
+  visibility: hidden;
+}
+
+.collapse.is-closed > .collapse__inner,
+.collapse.is-opening > .collapse__inner,
+.collapse.is-closing > .collapse__inner {
+  overflow: hidden;
+}
+
+.collapse.is-opening {
+  animation: collapse-open 0.2s ease-out;
+}
+
+.collapse.is-closing {
+  animation: collapse-close 0.2s ease-in;
+}
+
+@keyframes collapse-open {
+  from {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
+  to {
+    grid-template-rows: 1fr;
+    opacity: 1;
+  }
+}
+
+@keyframes collapse-close {
+  from {
+    grid-template-rows: 1fr;
+    opacity: 1;
+    visibility: visible;
+  }
+  to {
+    grid-template-rows: 0fr;
+    opacity: 0;
+    visibility: visible;
+  }
 }
 
 .reveal {
@@ -986,6 +1153,7 @@ code {
 }
 
 .theme {
+  position: relative;
   display: inline-flex;
   flex: 0 0 auto;
   padding: 3px;
@@ -996,6 +1164,11 @@ code {
 }
 
 .theme__btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
   width: 34px;
   height: 34px;
   border: 0;
@@ -1010,9 +1183,67 @@ code {
     color 0.15s;
 }
 
-.theme__btn.is-on {
+/* Повзунок під активною кнопкою (кнопка 34 px + проміжок 2 px). */
+.theme__thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
   background: var(--accent);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+  transform: translateX(calc(var(--i, 0) * 36px));
+}
+
+.theme__btn:not(.is-on):hover {
+  color: var(--text);
+}
+
+.theme__btn.is-on {
   color: var(--on-accent);
+}
+
+/* Зміна теми: повзунок їде з легким «пружинним» доїздом, значок обертається й з’являється. */
+.theme.is-moving .theme__thumb {
+  animation: theme-thumb 0.2s cubic-bezier(0.34, 1.45, 0.64, 1);
+}
+
+.theme.is-moving .theme__btn.is-on .icon {
+  animation: theme-icon 0.2s ease-out;
+}
+
+@keyframes theme-thumb {
+  from {
+    transform: translateX(calc(var(--from, 0) * 36px)) scaleX(1.15);
+  }
+}
+
+@keyframes theme-icon {
+  from {
+    transform: rotate(-90deg) scale(0.4);
+    opacity: 0;
+  }
+}
+
+/* Нова тема розходиться колом від натиснутої кнопки (View Transitions API). */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+::view-transition-new(root) {
+  animation: theme-reveal 0.2s ease-out;
+}
+
+@keyframes theme-reveal {
+  from {
+    clip-path: circle(0 at var(--reveal-x, 50%) var(--reveal-y, 0));
+  }
+  to {
+    clip-path: circle(var(--reveal-r, 150%) at var(--reveal-x, 50%) var(--reveal-y, 0));
+  }
 }
 
 /* Лічильники й прогрес лишаються видимими під час прокрутки довгих питань. */

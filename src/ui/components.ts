@@ -2,6 +2,7 @@ import type { Answer, Question } from '../data/types.ts';
 import { isGroup } from '../core/text.ts';
 import type { Theme } from '../core/storage.ts';
 import { cx, h, type Child } from './dom.ts';
+import { THEME_ICON, icon, type IconName } from './icons.ts';
 
 const NUMBERED = /^\d+\.\s/;
 
@@ -34,7 +35,7 @@ export const questionRef = (q: Question): string => `Модуль ${q.module} ·
 export function segmented<T extends string>(
   name: string,
   value: T,
-  options: ReadonlyArray<{ value: T; title: string; hint: string }>,
+  options: ReadonlyArray<{ value: T; title: string; hint: string; icon?: IconName }>,
   onChange: (v: T) => void,
 ): HTMLElement {
   return h(
@@ -51,7 +52,7 @@ export function segmented<T extends string>(
           'data-value': o.value,
           onclick: () => onChange(o.value),
         },
-        h('b', null, o.title),
+        h('b', null, o.icon ? icon(o.icon) : null, o.title),
         h('span', null, o.hint),
       ),
     ),
@@ -88,51 +89,29 @@ export function stepper(
       { class: 'num' },
       h(
         'button',
-        { type: 'button', 'aria-label': `${label}: менше`, disabled, onclick: () => onChange(clamp(value - 1)) },
-        '−',
+        {
+          type: 'button',
+          'aria-label': `${label}: менше`,
+          title: `${label}: менше`,
+          disabled,
+          onclick: () => onChange(clamp(value - 1)),
+        },
+        icon('minus'),
       ),
       input,
       h(
         'button',
-        { type: 'button', 'aria-label': `${label}: більше`, disabled, onclick: () => onChange(clamp(value + 1)) },
-        '+',
+        {
+          type: 'button',
+          'aria-label': `${label}: більше`,
+          title: `${label}: більше`,
+          disabled,
+          onclick: () => onChange(clamp(value + 1)),
+        },
+        icon('plus'),
       ),
     ),
   );
-}
-
-const SVG = 'http://www.w3.org/2000/svg';
-
-/** Значки теми (24×24, контур). */
-const THEME_ICONS: Readonly<Record<Theme, string>> = {
-  // Коло, ліва половина зафарбована — «як у системі».
-  system: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18zM12 3v18',
-  light:
-    'M12 8a4 4 0 1 0 0 8a4 4 0 1 0 0-8zM12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4',
-  dark: 'M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z',
-};
-
-function themeIcon(theme: Theme): SVGSVGElement {
-  const svg = document.createElementNS(SVG, 'svg');
-  svg.setAttribute('viewBox', '0 0 24 24');
-  svg.setAttribute('width', '18');
-  svg.setAttribute('height', '18');
-  svg.setAttribute('aria-hidden', 'true');
-  svg.setAttribute('fill', 'none');
-  svg.setAttribute('stroke', 'currentColor');
-  svg.setAttribute('stroke-width', '2');
-  svg.setAttribute('stroke-linecap', 'round');
-  svg.setAttribute('stroke-linejoin', 'round');
-  if (theme === 'system') {
-    const half = document.createElementNS(SVG, 'path');
-    half.setAttribute('d', 'M12 3a9 9 0 0 0 0 18z');
-    half.setAttribute('fill', 'currentColor');
-    svg.appendChild(half);
-  }
-  const path = document.createElementNS(SVG, 'path');
-  path.setAttribute('d', THEME_ICONS[theme]);
-  svg.appendChild(path);
-  return svg;
 }
 
 const THEMES: ReadonlyArray<{ value: Theme; label: string }> = [
@@ -141,11 +120,23 @@ const THEMES: ReadonlyArray<{ value: Theme; label: string }> = [
   { value: 'dark', label: 'Темна' },
 ];
 
-/** Компактний перемикач теми: як у системі / світла / темна. */
-export function themeSwitch(value: Theme, onChange: (t: Theme) => void): HTMLElement {
+/**
+ * Компактний перемикач теми: як у системі / світла / темна.
+ * Під активною кнопкою — «повзунок»; `from` — попередня тема, щоб повзунок
+ * проїхав від неї до нової (екран перемальовується повністю, тож transition не спрацює).
+ */
+export function themeSwitch(value: Theme, onChange: (t: Theme) => void, from: Theme | null = null): HTMLElement {
+  const index = (t: Theme) => THEMES.findIndex((x) => x.value === t);
+  const moving = from !== null && from !== value;
   return h(
     'div',
-    { class: 'theme', role: 'radiogroup', 'aria-label': 'Тема оформлення' },
+    {
+      class: cx('theme', moving && 'is-moving'),
+      role: 'radiogroup',
+      'aria-label': 'Тема оформлення',
+      style: `--i:${index(value)};--from:${moving ? index(from) : index(value)}`,
+    },
+    h('span', { class: 'theme__thumb', 'aria-hidden': 'true' }),
     THEMES.map((t) =>
       h(
         'button',
@@ -159,30 +150,32 @@ export function themeSwitch(value: Theme, onChange: (t: Theme) => void): HTMLEle
           'data-theme-value': t.value,
           onclick: () => onChange(t.value),
         },
-        themeIcon(t.value),
+        icon(THEME_ICON[t.value]),
       ),
     ),
   );
 }
 
-/** Значок «виключити»: перекреслене коло. */
-function banIcon(): SVGSVGElement {
-  const svg = document.createElementNS(SVG, 'svg');
-  for (const [k, v] of Object.entries({
-    viewBox: '0 0 24 24',
-    width: '18',
-    height: '18',
-    'aria-hidden': 'true',
-    fill: 'none',
-    stroke: 'currentColor',
-    'stroke-width': '2',
-    'stroke-linecap': 'round',
-  }))
-    svg.setAttribute(k, v);
-  const path = document.createElementNS(SVG, 'path');
-  path.setAttribute('d', 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18zM5.6 5.6l12.8 12.8');
-  svg.appendChild(path);
-  return svg;
+/**
+ * Блок, що плавно розгортається/згортається (висота й прозорість, 0,2 с).
+ * `animate` — анімувати лише в першому рендері після зміни, інакше показати кінцевий стан.
+ * Згорнутий блок лишається в DOM, але невидимий і недоступний для фокусу.
+ */
+export function collapse(
+  open: boolean,
+  animate: boolean,
+  attrs: Record<string, string>,
+  ...children: Child[]
+): HTMLElement {
+  return h(
+    'div',
+    {
+      ...attrs,
+      class: cx('collapse', attrs.class, !open && 'is-closed', animate && (open ? 'is-opening' : 'is-closing')),
+      inert: !open,
+    },
+    h('div', { class: 'collapse__inner' }, children),
+  );
 }
 
 export const EXCLUDE_TITLE = 'Виключити питання: більше не показувати його в тестах';
@@ -199,7 +192,7 @@ export function excludeButton(onExclude: () => void): HTMLElement {
       'data-testid': 'exclude',
       onclick: onExclude,
     },
-    banIcon(),
+    icon('ban'),
   );
 }
 
@@ -218,6 +211,7 @@ export function footer(version: string, onChangelog: () => void, extra: Child = 
       h(
         'button',
         { type: 'button', class: 'link link--inline', 'data-testid': 'changelog', onclick: onChangelog },
+        icon('sparkles', 14),
         'Що нового',
       ),
     ),
@@ -229,17 +223,17 @@ export function starButton(saved: boolean, onToggle: () => void): HTMLElement {
     'button',
     {
       type: 'button',
-      class: cx('star', saved && 'is-on'),
+      class: cx('iconbtn star', saved && 'is-on'),
       'aria-pressed': String(saved),
       'aria-label': saved ? 'Прибрати зі збережених' : 'Зберегти питання',
       title: saved ? 'Прибрати зі збережених' : 'Зберегти питання',
       onclick: onToggle,
     },
-    saved ? '★' : '☆',
+    icon(saved ? 'starFilled' : 'star', 20),
   );
 }
 
-export function modal(title: string, text: Child, buttons: Child, tone: 'danger' | 'neutral' = 'neutral') {
+export function modal(title: string, text: Child, buttons: Child, tone: 'danger' | 'neutral' = 'neutral'): HTMLElement {
   return h(
     'div',
     { class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'modal-title' },
